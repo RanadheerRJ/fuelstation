@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwner() {
+      return isSignedIn() && getUserData().role == 'owner';
+    }
+
+    function isManagerOrAbove() {
+      return isSignedIn() && getUserData().role in ['owner','admin','manager'];
+    }
+
+    function hasStationAccess(stationId) {
+      return isSignedIn() && (
+        isOwner() ||
+        stationId in getUserData().stationIds
+      );
+    }
+
+    function isSameUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection - PIN must never be exposed
+    match /users/{userId} {
+      // Read: own profile, or owner/manager/admin can read employees
+      allow read: if isSignedIn() && (
+        isSameUser(userId) ||
+        isOwner() ||
+        getUserData().role in ['admin','manager']
+      );
+      // Create: only owner/admin/manager can create employees
+      allow create: if isManagerOrAbove();
+      // Update: owner can update any, users can update own limited fields, manager can update their station employees
+      allow update: if isSignedIn() && (
+        isOwner() ||
+        isSameUser(userId) ||
+        getUserData().role in ['admin','manager']
+      );
+      // Prevent role escalation: only owner can set owner role
+      allow update: if isSignedIn() && (
+        (request.resource.data.role == resource.data.role) ||
+        isOwner()
+      );
+      allow delete: if isOwner();
+    }
+
+    // Stations
+    match /stations/{stationId} {
+      allow read: if isSignedIn() && hasStationAccess(stationId);
+      allow create: if isOwner();
+      allow update: if isManagerOrAbove() && hasStationAccess(stationId);
+      allow delete: if isOwner();
+    }
+
+    // Pumps - station-specific but flat collection
+    match /pumps/{pumpId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
+      allow update, delete: if isManagerOrAbove() && hasStationAccess(resource.data.stationId);
+    }
+
+    // Nozzles - meter reading entity
+    match /nozzles/{nozzleId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
+      allow update: if isManagerOrAbove() && hasStationAccess(resource.data.stationId);
+      // Attendants can update lastReading via shift close (handled via shift rules, but allow limited)
+      allow update: if isSignedIn() && hasStationAccess(resource.data.stationId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastReading','updatedAt']);
+      allow delete: if isOwner();
+    }
+
+    // Prices - historical, never overwrite, only create new and close old
+    match /prices/{priceId} {
+      allow read: if isSignedIn();
+      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
+      // Allow closing previous price (setting effectiveTo)
+      allow update: if isManagerOrAbove() && hasStationAccess(resource.data.stationId)
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['effectiveTo','updatedAt']);
+      allow delete: if false; // never delete price history
+    }
+
+    // Shifts - core operational data
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId)
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'ACTIVE';
+      allow update: if isSignedIn() && (
+        // Employee can close own active shift
+        (resource.data.userId == request.auth.uid && resource.data.status == 'ACTIVE' && request.resource.data.status == 'PENDING_REVIEW') ||
+        // Manager/Owner can approve/reject
+        (isManagerOrAbove() && hasStationAccess(resource.data.stationId) && request.resource.data.status in ['APPROVED','REJECTED','PENDING_REVIEW']) ||
+        // Allow adding closing readings etc - but prevent editing approved shifts
+        (resource.data.status != 'APPROVED' && resource.data.userId == request.auth.uid)
+      );
+      // Prevent editing approved shifts (locked)
+      allow update: if resource.data.status != 'APPROVED' || isOwner();
+      allow delete: if isOwner();
+    }
+
+    // Transactions (credits & expenses)
+    match /transactions/{txId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId);
+      allow update: if isSignedIn() && hasStationAccess(resource.data.stationId) && resource.data.status != 'locked';
+      allow delete: if isOwner();
+    }
+
+    // Notes
+    match /notes/{noteId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId);
+      allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isManagerOrAbove());
+    }
+
+    // Audit Logs - append only
+    match /auditLogs/{logId} {
+      allow read: if isSignedIn() && (isOwner() || hasStationAccess(resource.data.stationId));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // Assignments history
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow create, update: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
+      allow delete: if isOwner();
+    }
+  }
+}

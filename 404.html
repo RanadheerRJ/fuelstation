@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FuelOps</title>
+  <script>
+    // GitHub Pages SPA fallback - redirect to index.html with hash routing
+    // Preserve path as hash for SPA
+    (function() {
+      var l = window.location;
+      var base = l.pathname.split('/').slice(0, -1).join('/') + '/';
+      // If already hash routing, just go to index
+      if (l.hash) {
+        l.replace(base + 'index.html' + l.hash);
+      } else {
+        // Convert path to hash
+        var path = l.pathname.replace(base, '');
+        if (path && path !== 'index.html' && path !== '404.html') {
+          l.replace(base + 'index.html#/' + path + l.search);
+        } else {
+          l.replace(base + 'index.html');
+        }
+      }
+    })();
+  </script>
+</head>
+<body>Redirecting...</body>
+</html>
