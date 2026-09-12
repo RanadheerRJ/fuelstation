@@ -5,6 +5,46 @@ import { formatCurrency, formatLiters } from '../services/calc.js';
 
 export async function dashboardView({ root }) {
   const { user, currentStationId } = getState();
+
+  // SUPER ADMIN dashboard - invite only
+  if (user.role === 'super_admin') {
+    const { getAllStations } = await import('../services/stations.js');
+    const { getEmployees } = await import('../services/users.js');
+    const stations = await getAllStations();
+    const users = await getEmployees();
+    const owners = users.filter(u=>u.role==='owner');
+    root.innerHTML = `
+      <div class="container">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><h1 class="page-title">Super Admin 🔧<br><span style="font-weight:800">${user.name}</span></h1><p class="page-sub">Developer • Invite Only System</p></div>
+          <button class="neu-btn neu-btn--small" onclick="location.hash='#/settings'">⚙️</button>
+        </div>
+
+        <div class="grid grid-2" style="margin-top:18px">
+          <div class="neu-card stat-card"><div class="stat-label">Total Stations</div><div class="stat-value">${stations.length}</div><div class="stat-sub">${owners.length} owners</div></div>
+          <div class="neu-card stat-card"><div class="stat-label">Total Users</div><div class="stat-value">${users.length}</div><div class="stat-sub">Invite only</div></div>
+        </div>
+
+        <div class="neu-card" style="margin-top:18px;text-align:center">
+          <h3 style="font-weight:800">👑 Invite New Owner</h3>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:6px">You as developer invite owners with site name + phone + PIN. They login and setup their fuel station.</p>
+          <button class="neu-btn neu-btn--primary" style="margin-top:12px" onclick="location.hash='#/super-admin'">Go to Invite Panel</button>
+        </div>
+
+        <div class="neu-card" style="margin-top:16px">
+          <h3 style="font-weight:800;font-size:14px">Recent Owners</h3>
+          <div class="list" style="margin-top:12px">
+            ${owners.slice(0,5).map(o=>`
+              <div class="list-item"><div><div style="font-weight:700;font-size:13px">${o.name}</div><div style="font-size:11px;color:var(--text-muted)">${o.phone} • ${(o.stationIds||[]).length} sites</div></div><span class="badge badge--info">OWNER</span></div>
+            `).join('') || `<p style="font-size:12px;color:var(--text-muted)">No owners yet. Invite one.</p>`}
+          </div>
+          <button class="neu-btn neu-btn--small" style="margin-top:12px" onclick="location.hash='#/super-admin'">View All & Invite</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   const stations = await getStationsForCurrentUser();
   if (stations.length === 0) {
     root.innerHTML = `

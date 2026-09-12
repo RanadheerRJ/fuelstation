@@ -50,8 +50,8 @@ export function clearState() {
   listeners.forEach(fn => fn(state));
 }
 
-// Demo data persistence - PROD FINAL CLEAN - no dummy prices/readings
-const DEMO_KEY = 'fuelops_demo_v5_prod_real';
+// Demo data persistence - PROD FINAL - invite only - super_admin bootstrap
+const DEMO_KEY = 'fuelops_demo_v6_invite_only';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);

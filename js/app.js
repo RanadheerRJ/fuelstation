@@ -11,6 +11,7 @@ import { pricesView } from './views/prices.js';
 import { shiftsListView, startShiftView, shiftDetailView, closeShiftView } from './views/shifts.js';
 import { reportsView, auditView } from './views/reports.js';
 import { settingsView } from './views/settings.js';
+import { superAdminView } from './views/superAdmin.js';
 import { logout } from './auth.js';
 
 const appRoot = document.getElementById('appRoot');
@@ -38,6 +39,8 @@ async function bootstrap() {
   registerRoute('/reports', reportsView);
   registerRoute('/reports/audit', auditView);
   registerRoute('/settings', settingsView);
+  registerRoute('/super-admin', superAdminView);
+  registerRoute('/invite', superAdminView);
   // Default
   registerRoute('/', dashboardView);
 
@@ -84,7 +87,15 @@ function updateChrome(state) {
 
 function renderBottomNav(role) {
   let items = [];
-  if (['owner','admin','manager'].includes(role)) {
+  if (role === 'super_admin') {
+    items = [
+      { path: '#/dashboard', icon: '🏠', label: 'Home' },
+      { path: '#/super-admin', icon: '👑', label: 'Invite' },
+      { path: '#/stations', icon: '⛽', label: 'Stations' },
+      { path: '#/reports', icon: '📊', label: 'Reports' },
+      { path: '#/settings', icon: '⚙️', label: 'More' },
+    ];
+  } else if (['owner','admin','manager'].includes(role)) {
     items = [
       { path: '#/dashboard', icon: '🏠', label: 'Home' },
       { path: '#/pumps', icon: '⛽', label: 'Pumps' },

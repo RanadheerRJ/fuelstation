@@ -1,5 +1,5 @@
-// FuelOps Service Worker - PROD FINAL - no dummy prices/readings - no recent activity
-const CACHE_NAME = 'fuelops-v5-prod-real-users-20260912';
+// FuelOps Service Worker - PROD FINAL - invite only - super admin
+const CACHE_NAME = 'fuelops-v6-invite-only-20260912';
 const APP_SHELL = [
   './',
   './index.html',
@@ -31,6 +31,7 @@ const APP_SHELL = [
   './js/views/shifts.js',
   './js/views/reports.js',
   './js/views/settings.js',
+  './js/views/superAdmin.js',
   './assets/icons/icon.svg'
 ];
 

@@ -5,6 +5,9 @@ export async function getStationsForCurrentUser() {
   const { user } = getState();
   if (!user) return [];
   const all = await listDocs('stations');
+  if (user.role === 'super_admin') {
+    return all; // super admin sees all
+  }
   if (user.role === 'owner') {
     return all.filter(s => s.ownerId === user.uid || (user.stationIds||[]).includes(s.id));
   }

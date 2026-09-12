@@ -11,16 +11,21 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && getUserData().role == 'super_admin';
+    }
+
     function isOwner() {
       return isSignedIn() && getUserData().role == 'owner';
     }
 
     function isManagerOrAbove() {
-      return isSignedIn() && getUserData().role in ['owner','admin','manager'];
+      return isSignedIn() && getUserData().role in ['super_admin','owner','admin','manager'];
     }
 
     function hasStationAccess(stationId) {
       return isSignedIn() && (
+        isSuperAdmin() ||
         isOwner() ||
         stationId in getUserData().stationIds
       );
@@ -31,110 +36,106 @@ service cloud.firestore {
     }
 
     // Users collection - PIN must never be exposed
+    // Super Admin can do everything, invite-only system
     match /users/{userId} {
-      // Read: own profile, or owner/manager/admin can read employees
       allow read: if isSignedIn() && (
         isSameUser(userId) ||
+        isSuperAdmin() ||
         isOwner() ||
         getUserData().role in ['admin','manager']
       );
-      // Create: only owner/admin/manager can create employees
-      allow create: if isManagerOrAbove();
-      // Update: owner can update any, users can update own limited fields, manager can update their station employees
+      // Create: super_admin can create owners, owner/admin/manager can create employees
+      allow create: if isSuperAdmin() || isManagerOrAbove();
       allow update: if isSignedIn() && (
+        isSuperAdmin() ||
         isOwner() ||
         isSameUser(userId) ||
         getUserData().role in ['admin','manager']
       );
-      // Prevent role escalation: only owner can set owner role
+      // Prevent role escalation: only super_admin can set super_admin or owner roles
       allow update: if isSignedIn() && (
         (request.resource.data.role == resource.data.role) ||
-        isOwner()
+        isSuperAdmin() ||
+        (isOwner() && request.resource.data.role in ['admin','manager','attendant'])
       );
-      allow delete: if isOwner();
+      allow delete: if isSuperAdmin() || isOwner();
     }
 
-    // Stations
+    // Stations - super_admin can create for inviting owners
     match /stations/{stationId} {
       allow read: if isSignedIn() && hasStationAccess(stationId);
-      allow create: if isOwner();
-      allow update: if isManagerOrAbove() && hasStationAccess(stationId);
-      allow delete: if isOwner();
+      allow create: if isSuperAdmin() || isOwner();
+      allow update: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(stationId));
+      allow delete: if isSuperAdmin() || isOwner();
     }
 
-    // Pumps - station-specific but flat collection
+    // Pumps
     match /pumps/{pumpId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
-      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
-      allow update, delete: if isManagerOrAbove() && hasStationAccess(resource.data.stationId);
+      allow create: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(request.resource.data.stationId));
+      allow update, delete: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(resource.data.stationId));
     }
 
-    // Nozzles - meter reading entity
+    // Nozzles
     match /nozzles/{nozzleId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
-      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
-      allow update: if isManagerOrAbove() && hasStationAccess(resource.data.stationId);
-      // Attendants can update lastReading via shift close (handled via shift rules, but allow limited)
+      allow create: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(request.resource.data.stationId));
+      allow update: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(resource.data.stationId));
       allow update: if isSignedIn() && hasStationAccess(resource.data.stationId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastReading','updatedAt']);
-      allow delete: if isOwner();
+      allow delete: if isSuperAdmin() || isOwner();
     }
 
-    // Prices - historical, never overwrite, only create new and close old
+    // Prices
     match /prices/{priceId} {
       allow read: if isSignedIn();
-      allow create: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
-      // Allow closing previous price (setting effectiveTo)
-      allow update: if isManagerOrAbove() && hasStationAccess(resource.data.stationId)
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['effectiveTo','updatedAt']);
-      allow delete: if false; // never delete price history
+      allow create: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(request.resource.data.stationId));
+      allow update: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(resource.data.stationId)
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['effectiveTo','updatedAt']));
+      allow delete: if false;
     }
 
-    // Shifts - core operational data
+    // Shifts
     match /shifts/{shiftId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
       allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId)
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.status == 'ACTIVE';
       allow update: if isSignedIn() && (
-        // Employee can close own active shift
         (resource.data.userId == request.auth.uid && resource.data.status == 'ACTIVE' && request.resource.data.status == 'PENDING_REVIEW') ||
-        // Manager/Owner can approve/reject
         (isManagerOrAbove() && hasStationAccess(resource.data.stationId) && request.resource.data.status in ['APPROVED','REJECTED','PENDING_REVIEW']) ||
-        // Allow adding closing readings etc - but prevent editing approved shifts
         (resource.data.status != 'APPROVED' && resource.data.userId == request.auth.uid)
       );
-      // Prevent editing approved shifts (locked)
-      allow update: if resource.data.status != 'APPROVED' || isOwner();
-      allow delete: if isOwner();
+      allow update: if isSuperAdmin() || resource.data.status != 'APPROVED' || isOwner();
+      allow delete: if isSuperAdmin() || isOwner();
     }
 
-    // Transactions (credits & expenses)
+    // Transactions
     match /transactions/{txId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
       allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId);
       allow update: if isSignedIn() && hasStationAccess(resource.data.stationId) && resource.data.status != 'locked';
-      allow delete: if isOwner();
+      allow delete: if isSuperAdmin() || isOwner();
     }
 
     // Notes
     match /notes/{noteId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
       allow create: if isSignedIn() && hasStationAccess(request.resource.data.stationId);
-      allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isManagerOrAbove());
+      allow update, delete: if isSignedIn() && (isSuperAdmin() || resource.data.userId == request.auth.uid || isManagerOrAbove());
     }
 
-    // Audit Logs - append only
+    // Audit Logs
     match /auditLogs/{logId} {
-      allow read: if isSignedIn() && (isOwner() || hasStationAccess(resource.data.stationId));
+      allow read: if isSignedIn() && (isSuperAdmin() || isOwner() || hasStationAccess(resource.data.stationId));
       allow create: if isSignedIn();
       allow update, delete: if false;
     }
 
-    // Assignments history
+    // Assignments
     match /assignments/{assignmentId} {
       allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
-      allow create, update: if isManagerOrAbove() && hasStationAccess(request.resource.data.stationId);
-      allow delete: if isOwner();
+      allow create, update: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(request.resource.data.stationId));
+      allow delete: if isSuperAdmin() || isOwner();
     }
   }
 }
