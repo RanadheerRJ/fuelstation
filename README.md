@@ -3,6 +3,7 @@
 A beautiful, lightweight, mobile-first Progressive Web App for managing daily fuel-station operations. Built with vanilla HTML/CSS/JS, Firebase, and designed for GitHub Pages.
 
 > **Goal:** Digital replacement for paper notebook + Excel for shift operations.
+> **Status:** ✅ **PROD READY - No dummy data - Clean install**
 
 ## ✨ Features
 
@@ -19,25 +20,28 @@ A beautiful, lightweight, mobile-first Progressive Web App for managing daily fu
 - **PWA**: installable, offline shell caching, GitHub Pages subpath friendly (hash routing, relative paths)
 - **Neumorphic UI**: soft shadows, tactile, professional
 
-## 🚀 Quick Start (Demo Mode)
+## 🚀 Quick Start (Prod Ready - Empty DB)
 
-No Firebase needed to try UI:
+No dummy data - clean install:
 
 1. Clone repo
 2. Open `index.html` via local server (or GitHub Pages)
-3. Login with demo creds:
-   - Owner: `+919999999999` / `1111`
-   - Manager: `+919999999998` / `2222`
-   - Attendant: `+919999999997` / `3333`
+3. First screen will say **Create First Owner** (because DB empty)
+4. Enter Name, Phone, PIN → Owner created → Login
+5. Then create Stations, Pumps, Employees etc.
 
-Demo data stored in localStorage.
+Demo data stored in localStorage under `fuelops_demo_v3_prod` - starts empty, no pre-seeded stations.
 
-## 🔧 Firebase Setup (Production)
+## 🔧 Firebase Setup (Production) - See FIREBASE_SETUP.md
+
+**Detailed step-by-step guide:** See [`FIREBASE_SETUP.md`](./FIREBASE_SETUP.md)
+
+Quick version:
 
 1. Create project at https://console.firebase.google.com
 2. Enable **Authentication** → Sign-in method → **Email/Password** (we use email derived from phone: `+91...@fuelops.app`, password = `FuelOps#PIN#2024`)
    - Optionally enable Phone Auth for OTP verification on first setup
-3. Create **Firestore Database**
+3. Create **Firestore Database** (location: asia-south1 for India)
 4. Copy config from Project Settings → Your apps → Web app
 5. Paste into `js/firebase-config.js`:
 ```js
@@ -50,20 +54,14 @@ export const firebaseConfig = {
   appId: "YOUR_APP_ID"
 };
 ```
-6. Apply Firestore rules from `firestore.rules` in Firebase Console → Firestore → Rules
-7. Create first owner user:
-   - Either via app's Employees → Add (will create Firebase Auth user)
-   - Or manually in Firebase Auth + add doc in `users` collection:
-```json
-{
-  "phone": "+919999999999",
-  "name": "Owner",
-  "role": "owner",
-  "stationIds": [],
-  "status": "active"
-}
-```
-UID must match Auth UID.
+6. Apply Firestore rules from `firestore.rules` in Firebase Console → Firestore → Rules → Publish
+7. Deploy to GitHub Pages → Open URL → **Create First Owner** screen appears → Create owner → Done
+
+**What I need from you (if you want me to configure):**
+- Paste your Firebase web config JSON (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId)
+- I will update `js/firebase-config.js` and push
+
+No dummy data will be created - you start fresh with your own stations.
 
 ## 📦 Deploy to GitHub Pages
 
@@ -135,8 +133,8 @@ fuelops/
   - Approved shifts locked
   - Price history append-only
   - No role escalation
-- Phone → Email mapping: `+919999999999` → `+919999999999@fuelops.app`
-- Password derivation: `FuelOps#<PIN>#2024` (6+ chars required by Firebase)
+- Phone → Email mapping: `+91XXXXXXXXXX` → `+91XXXXXXXXXX@fuelops.app`
+- Password derivation: `FuelOps#<PIN>#2024` (6+ chars required by Firebase, actual length 16+)
 
 For higher security, you can later switch to:
 - Firebase Phone OTP for login + custom claims for role

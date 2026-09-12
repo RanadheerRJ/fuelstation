@@ -1,5 +1,5 @@
-// FuelOps Service Worker - GitHub Pages friendly
-const CACHE_NAME = 'fuelops-v1-20260912';
+// FuelOps Service Worker - GitHub Pages friendly - PROD READY v2 (clean DB)
+const CACHE_NAME = 'fuelops-v2-prod-clean-20260912';
 const APP_SHELL = [
   './',
   './index.html',

@@ -1,21 +1,85 @@
 import { loginWithPhonePin } from '../auth.js';
 import { getFirebaseStatus } from '../firebase.js';
-import { getDemoData } from '../state.js';
+import { getState } from '../state.js';
+import * as demo from '../services/demoStore.js';
+import { registerUserInFirebase } from '../auth.js';
 
 export async function loginView({ root }) {
   const { isDemo, configured } = getFirebaseStatus();
-  const demoCreds = [
-    { label: 'Owner', phone: '+919999999999', pin: '1111' },
-    { label: 'Manager', phone: '+919999999998', pin: '2222' },
-    { label: 'Attendant', phone: '+919999999997', pin: '3333' },
-  ];
+  const hasUsers = isDemo ? demo.demoHasUsers() : true; // in prod, we assume users exist via Firebase
+
+  // If demo and no users, show first-owner setup
+  if (isDemo && !hasUsers) {
+    root.innerHTML = `
+      <div class="container" style="max-width:420px;padding-top:28px">
+        <div style="text-align:center;margin-bottom:22px">
+          <div class="brand" style="justify-content:center;font-size:28px"><div class="brand-mark">F</div> FuelOps</div>
+          <p class="page-sub" style="margin-top:8px">Production Ready • Clean Install</p>
+          <div class="badge badge--warning" style="margin-top:10px">No users found • Create Owner</div>
+        </div>
+
+        <div class="neu-card">
+          <h2 style="font-size:20px;font-weight:800;text-align:center">Create First Owner 👑</h2>
+          <p style="text-align:center;color:var(--text-muted);font-size:12px;margin:6px 0 18px">This will be the super admin. No dummy data.</p>
+          <div id="setupAlert"></div>
+          <div class="grid" style="gap:12px">
+            <div><label class="label">Owner Name</label><input id="setup_name" class="neu-input" placeholder="Your Name"></div>
+            <div><label class="label">Phone Number</label><input id="setup_phone" class="neu-input" type="tel" placeholder="+91 99999 99999"></div>
+            <div><label class="label">4-digit PIN</label><input id="setup_pin" class="neu-input" type="tel" maxlength="4" placeholder="1234"></div>
+            <button id="setupBtn" class="neu-btn neu-btn--primary neu-btn--block">Create Owner & Login</button>
+          </div>
+          <div class="alert alert--info" style="margin-top:14px">In production with Firebase, create owner via Firebase Console first, or use this same flow after configuring Firebase. PIN is never stored plain in Firestore - Firebase Auth holds the hash.</div>
+        </div>
+
+        <div class="neu-card neu-card--sm" style="margin-top:16px">
+          <h4 style="font-weight:800;font-size:12px">Firebase Setup Checklist</h4>
+          <ol style="font-size:11px;color:var(--text-muted);margin-top:8px;padding-left:16px;display:flex;flex-direction:column;gap:4px">
+            <li>Create Firebase project</li>
+            <li>Enable Auth → Email/Password</li>
+            <li>Create Firestore DB</li>
+            <li>Paste config into <code>js/firebase-config.js</code></li>
+            <li>Apply rules from <code>firestore.rules</code></li>
+            <li>Deploy to GitHub Pages</li>
+          </ol>
+        </div>
+      </div>
+    `;
+
+    root.querySelector('#setupBtn').addEventListener('click', async ()=>{
+      const name = root.querySelector('#setup_name').value.trim();
+      const phone = root.querySelector('#setup_phone').value.trim();
+      const pin = root.querySelector('#setup_pin').value.trim();
+      const alertEl = root.querySelector('#setupAlert');
+      if (!name || !phone || !pin || pin.length!==4) {
+        alertEl.innerHTML = `<div class="alert alert--danger">Fill all fields, PIN 4 digits</div>`;
+        return;
+      }
+      try {
+        const user = await registerUserInFirebase({ phone, pin, name, role: 'owner', stationIds: [] });
+        // Also login directly in demo
+        if (isDemo) {
+          const { setState } = await import('../state.js');
+          setState({ user: { uid: user.uid||user.id, phone, name, role: 'owner', stationIds: [] }, currentStationId: null });
+          location.hash = '#/dashboard';
+        } else {
+          // For Firebase, we created auth user, now login
+          const { loginWithPhonePin } = await import('../auth.js');
+          await loginWithPhonePin(phone, pin);
+          location.hash = '#/dashboard';
+        }
+      } catch(e){
+        alertEl.innerHTML = `<div class="alert alert--danger">⚠️ ${e.message}</div>`;
+      }
+    });
+    return;
+  }
 
   root.innerHTML = `
     <div class="container" style="max-width:420px;padding-top:28px">
       <div style="text-align:center;margin-bottom:22px">
         <div class="brand" style="justify-content:center;font-size:28px"><div class="brand-mark">F</div> FuelOps</div>
         <p class="page-sub" style="margin-top:8px">Fuel Station Daily Operations</p>
-        ${isDemo ? `<div class="badge badge--info" style="margin-top:10px">Demo Mode • No Firebase config needed</div>` : `<div class="badge badge--success" style="margin-top:10px">Live • Firebase Connected</div>`}
+        ${isDemo ? `<div class="badge badge--warning" style="margin-top:10px">Demo Mode • Empty DB • Prod Ready</div>` : `<div class="badge badge--success" style="margin-top:10px">Live • Firebase Connected</div>`}
       </div>
 
       <div class="neu-card">
@@ -25,7 +89,7 @@ export async function loginView({ root }) {
         <div id="loginAlert"></div>
 
         <label class="label">Phone Number</label>
-        <input id="phoneInput" class="neu-input" type="tel" placeholder="+91 99999 99999" value="+919999999999" inputmode="tel" autocomplete="tel" />
+        <input id="phoneInput" class="neu-input" type="tel" placeholder="+91 99999 99999" value="" inputmode="tel" autocomplete="tel" />
 
         <div style="margin-top:16px">
           <label class="label">PIN (4 digits)</label>
@@ -47,23 +111,19 @@ export async function loginView({ root }) {
 
         <button id="loginBtn" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:8px">Login</button>
 
-        <div style="text-align:center;margin-top:12px">
-          <button id="forgotBtn" style="background:none;border:none;color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer">Forgot PIN?</button>
+        <div style="text-align:center;margin-top:12px;display:flex;justify-content:center;gap:12px">
+          <button id="forgotBtn" style="background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer">Forgot PIN?</button>
+          ${isDemo ? `<button id="resetDemoBtn" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:600;cursor:pointer">Reset DB</button>` : ''}
         </div>
 
         ${isDemo ? `
           <div class="divider"></div>
-          <p class="label">Quick Demo Logins</p>
-          <div class="grid" style="gap:8px">
-            ${demoCreds.map(c=>`<button class="neu-btn neu-btn--small demo-login" data-phone="${c.phone}" data-pin="${c.pin}">${c.label} • ${c.pin}</button>`).join('')}
-          </div>
-          <p style="font-size:11px;color:var(--text-muted);margin-top:10px">Demo data is stored locally. No real Firebase needed. Configure Firebase in <code>js/firebase-config.js</code> for production.</p>
+          <p style="font-size:11px;color:var(--text-muted);text-align:center">Prod ready: No dummy data. Configure Firebase in <code>js/firebase-config.js</code> to go live. See README.</p>
         ` : ''}
       </div>
 
       <div class="neu-card neu-card--sm" style="margin-top:16px;text-align:center">
-        <p style="font-size:12px;color:var(--text-muted)">PWA • Installable • Works on GitHub Pages subpath</p>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:4px">Try offline banner: toggle network in devtools</p>
+        <p style="font-size:11px;color:var(--text-muted)">PWA • GitHub Pages subpath safe • Hash routing • Relative assets</p>
       </div>
     </div>
   `;
@@ -100,7 +160,6 @@ export async function loginView({ root }) {
     }
   });
 
-  // Keyboard support
   document.addEventListener('keydown', onKey);
   function onKey(e){
     if (e.key >= '0' && e.key <= '9' && pin.length < 4) { pin += e.key; renderPin(); if (pin.length===4) doLogin(); }
@@ -129,16 +188,13 @@ export async function loginView({ root }) {
 
   loginBtn.addEventListener('click', doLogin);
   root.querySelector('#forgotBtn').addEventListener('click', ()=>{
-    showAlert('Contact your Owner/Manager to reset PIN. In demo, use PINs shown above.', 'info');
+    showAlert('Contact Owner/Manager to reset PIN. In Firebase, reset via Firebase Console → Auth, or recreate user.', 'info');
   });
-
-  root.querySelectorAll('.demo-login').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      phoneInput.value = btn.dataset.phone;
-      pin = btn.dataset.pin;
-      renderPin();
-      doLogin();
-    });
+  root.querySelector('#resetDemoBtn')?.addEventListener('click', ()=>{
+    if (confirm('Clear all local demo data?')) {
+      demo.demoReset();
+      location.reload();
+    }
   });
 
   renderPin();

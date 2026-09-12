@@ -20,16 +20,15 @@ export async function loginWithPhonePin(phone, pin) {
   if (getIsDemo()) {
     // Demo auth: check users collection
     const users = demo.demoGet('users');
+    if (users.length === 0) throw new Error('No users found. Please create first Owner account.');
     const user = users.find(u => u.phone === phone);
-    if (!user) throw new Error('User not found in demo. Try +919999999999 / 1111 (owner), +919999999998 / 2222 (manager), +919999999997 / 3333 (attendant)');
-    // check pinHash
+    if (!user) throw new Error('User not found. Create Owner first or check phone number.');
+    // check pinHash - prod ready: still obfuscated locally only, Firebase holds real hash
     const expected = user.pinHash;
-    // pinHash stored as plain for demo simplicity (1111 etc) or base64
     const isMatch = expected === pin || atobSafe(expected) === pin || expected === btoa(pin);
     if (!isMatch) throw new Error('Invalid PIN');
     const sessionUser = { uid: user.uid, phone: user.phone, name: user.name, role: user.role, stationIds: user.stationIds, status: user.status };
     setState({ user: sessionUser, currentStationId: user.stationIds?.[0] || null });
-    // log
     demo.demoAdd('auditLogs', { userId: user.uid, stationId: user.stationIds?.[0]||null, action: 'LOGIN', timestamp: new Date().toISOString(), metadata: { phone } });
     return sessionUser;
   }
