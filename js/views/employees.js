@@ -61,7 +61,7 @@ export async function employeesView({ root }) {
           </select></div>
           <div><label class="label">Assigned Stations</label><div class="neu-card neu-card--inset" style="padding:12px;display:flex;flex-direction:column;gap:8px">${allStationOptions}</div></div>
           <button id="saveEmp" class="neu-btn neu-btn--primary neu-btn--block">${existing?'Update':'Create'}</button>
-          <p style="font-size:11px;color:var(--text-muted)">In production, Firebase Auth email = phone@fuelops.app and password = derived from PIN (not stored plain). Demo stores obfuscated PIN locally.</p>
+          <p style="font-size:11px;color:var(--text-muted)">Phone + PIN: In production, Firebase Auth email = phone@fuelops.app, password derived from PIN (never stored plain in Firestore).</p>
         </div>
       </div></div>`;
     modalRoot.querySelector('#backdrop').addEventListener('click', e=>{ if(e.target.id==='backdrop') modalRoot.innerHTML=''; });

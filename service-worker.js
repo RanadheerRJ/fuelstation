@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - no dummy prices/readings - no recent activity
-const CACHE_NAME = 'fuelops-v4-prod-no-dummy-20260912';
+const CACHE_NAME = 'fuelops-v5-prod-real-users-20260912';
 const APP_SHELL = [
   './',
   './index.html',

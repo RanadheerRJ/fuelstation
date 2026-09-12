@@ -51,7 +51,7 @@ export function clearState() {
 }
 
 // Demo data persistence - PROD FINAL CLEAN - no dummy prices/readings
-const DEMO_KEY = 'fuelops_demo_v4_prod_final';
+const DEMO_KEY = 'fuelops_demo_v5_prod_real';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);
