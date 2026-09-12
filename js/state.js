@@ -50,8 +50,8 @@ export function clearState() {
   listeners.forEach(fn => fn(state));
 }
 
-// Demo data persistence - bumped to v3 to clear old dummy data for prod ready
-const DEMO_KEY = 'fuelops_demo_v3_prod';
+// Demo data persistence - PROD FINAL CLEAN - no dummy prices/readings
+const DEMO_KEY = 'fuelops_demo_v4_prod_final';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);

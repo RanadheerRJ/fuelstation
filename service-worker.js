@@ -1,5 +1,5 @@
-// FuelOps Service Worker - GitHub Pages friendly - PROD READY v2 (clean DB)
-const CACHE_NAME = 'fuelops-v3-no-activity-20260912';
+// FuelOps Service Worker - PROD FINAL - no dummy prices/readings - no recent activity
+const CACHE_NAME = 'fuelops-v4-prod-no-dummy-20260912';
 const APP_SHELL = [
   './',
   './index.html',

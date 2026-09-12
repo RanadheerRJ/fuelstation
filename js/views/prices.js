@@ -59,7 +59,7 @@ export async function pricesView({ root }) {
       <div class="modal-backdrop" id="backdrop"><div class="modal">
         <div style="display:flex;justify-content:space-between"><h3 style="font-weight:800">Update ${fuelType} Price</h3><button id="closeM" class="neu-btn neu-btn--small">✕</button></div>
         <div class="grid" style="margin-top:14px">
-          <div><label class="label">New Price (₹ / L)</label><input id="priceInput" class="neu-input" type="number" step="0.01" placeholder="104.25"></div>
+          <div><label class="label">New Price (₹ / L)</label><input id="priceInput" class="neu-input" type="number" step="0.01" placeholder="e.g. 105.50"></div>
           <button id="savePrice" class="neu-btn neu-btn--primary neu-btn--block">Update Price</button>
           <p style="font-size:11px;color:var(--text-muted)">This will close previous active price and start new history entry.</p>
         </div>
