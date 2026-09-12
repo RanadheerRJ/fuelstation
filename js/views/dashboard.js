@@ -1,10 +1,7 @@
 import { getState, setState } from '../state.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
-import { getNozzles, getPumps } from '../services/pumps.js';
-import { getActivePrices } from '../services/prices.js';
-import { getAuditLogs } from '../services/reports.js';
-import { formatCurrency, formatLiters, formatDateTime } from '../services/calc.js';
+import { formatCurrency, formatLiters } from '../services/calc.js';
 
 export async function dashboardView({ root }) {
   const { user, currentStationId } = getState();
@@ -41,8 +38,6 @@ export async function dashboardView({ root }) {
   todayShifts.forEach(s=>{ totalSales += s.totals?.totalRevenue||0; totalLiters += s.totals?.totalLiters||0; variance += s.totals?.variance||0; });
 
   const myActiveShift = await getActiveShiftForUser(user.uid);
-
-  const auditLogs = await getAuditLogs(activeStation.id, 6);
 
   root.innerHTML = `
     <div class="container">
@@ -113,23 +108,6 @@ export async function dashboardView({ root }) {
           </div>
         </div>
       `:''}
-
-      <div class="neu-card" style="margin-top:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3 style="font-size:14px;font-weight:800">Recent Activity</h3>
-          <button class="neu-btn neu-btn--small" onclick="location.hash='#/reports/audit'">View All</button>
-        </div>
-        <div class="list" style="margin-top:12px">
-          ${auditLogs.length ? auditLogs.map(l=>`
-            <div class="list-item">
-              <div style="display:flex;gap:10px;align-items:center">
-                <div class="avatar" style="width:32px;height:32px;font-size:12px">${(l.action||'?')[0]}</div>
-                <div><div style="font-size:12px;font-weight:700">${l.action.replaceAll('_',' ')}</div><div style="font-size:11px;color:var(--text-muted)">${l.metadata? JSON.stringify(l.metadata).slice(0,50):''} • ${formatDateTime(l.timestamp)}</div></div>
-              </div>
-            </div>
-          `).join('') : `<p style="font-size:12px;color:var(--text-muted)">No activity yet</p>`}
-        </div>
-      </div>
 
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
         <button class="neu-btn neu-btn--small" onclick="location.hash='#/stations'">⛽ Stations</button>
