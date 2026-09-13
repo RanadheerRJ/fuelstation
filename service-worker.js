@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - invite only - super admin
-const CACHE_NAME = 'fuelops-v7-neumorphic-soft-20260913';
+const CACHE_NAME = 'fuelops-v8-ios-clean-20260913';
 const APP_SHELL = [
   './',
   './index.html',
