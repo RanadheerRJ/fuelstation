@@ -7,28 +7,30 @@ export async function loginView({ root }) {
   const { isDemo } = getFirebaseStatus();
   const hasUsers = isDemo ? demo.demoHasUsers() : true;
 
-  // BOOTSTRAP: No users at all -> Developer Super Admin setup only
-  // No public self-registration. Only Dev can bootstrap, then invite Owners.
+  // BOOTSTRAP: Super Admin setup - invite-only system
   if (isDemo && !hasUsers) {
     root.innerHTML = `
-      <div class="container" style="max-width:420px;padding-top:32px">
-        <div style="text-align:center;margin-bottom:24px">
-          <div class="brand" style="justify-content:center;font-size:30px"><div class="brand-mark">F</div> FuelOps</div>
-          <p class="page-sub" style="margin-top:8px">Developer Setup</p>
+      <div class="login-wrapper">
+        <div class="login-brand">
+          <div class="brand-mark">F</div>
+          <div style="font-weight:900;font-size:26px;letter-spacing:-0.04em">FuelOps</div>
+          <div style="color:var(--text-muted);font-size:13px;margin-top:4px;font-weight:600">Developer Setup • Invite Only</div>
         </div>
 
-        <div class="neu-card">
-          <h2 style="font-size:20px;font-weight:800;text-align:center">Super Admin Setup 🔧</h2>
-          <p style="text-align:center;color:var(--text-muted);font-size:12px;margin:6px 0 18px">First time only — you are the developer. Create Super Admin account. You will then invite Owners.</p>
+        <div class="login-card">
+          <h2>Super Admin Setup 🔧</h2>
+          <p class="sub">First time only — you are the developer. Create Super Admin, then invite Owners.</p>
           <div id="setupAlert"></div>
-          <div class="grid" style="gap:12px">
-            <div><label class="label">Developer Name</label><input id="setup_name" class="neu-input" placeholder="Your Name"></div>
-            <div><label class="label">Phone Number</label><input id="setup_phone" class="neu-input" type="tel" placeholder="+91 99999 99999"></div>
+          <div class="grid" style="gap:14px;margin-top:18px">
+            <div><label class="label">Developer Name</label><input id="setup_name" class="neu-input" placeholder="Your full name"></div>
+            <div><label class="label">Phone Number</label><input id="setup_phone" class="neu-input" type="tel" placeholder="+91  98765 43210"></div>
             <div><label class="label">4-digit PIN</label><input id="setup_pin" class="neu-input" type="tel" maxlength="4" placeholder="••••"></div>
-            <div><label class="label">Setup Key (for security)</label><input id="setup_key" class="neu-input" type="password" placeholder="Enter DEV_SETUP_KEY"></div>
-            <button id="setupBtn" class="neu-btn neu-btn--primary neu-btn--block">Create Super Admin & Login</button>
+            <div><label class="label">Setup Key</label><input id="setup_key" class="neu-input" type="password" placeholder="FUELDEV2024"></div>
+            <button id="setupBtn" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:6px">Create Super Admin</button>
           </div>
-          <div class="alert alert--info" style="margin-top:14px">Setup Key is <code>FUELDEV2024</code> by default (change in code for prod). After Super Admin is created, no one can self-register. Only Super Admin can invite Owners with site name + phone + PIN.</div>
+          <div class="neu-card neu-card--inset" style="margin-top:18px;padding:14px;border-radius:14px">
+            <p style="font-size:11px;color:var(--text-muted);line-height:1.5">Setup Key is <b>FUELDEV2024</b> by default. After Super Admin is created, no one can self-register. Only Super Admin can invite Owners with site name + phone + PIN.</p>
+          </div>
         </div>
       </div>
     `;
@@ -40,11 +42,11 @@ export async function loginView({ root }) {
       const key = root.querySelector('#setup_key').value.trim();
       const alertEl = root.querySelector('#setupAlert');
       if (key !== 'FUELDEV2024' && key !== 'fueldev2024' && key !== 'DEV1234') {
-        alertEl.innerHTML = `<div class="alert alert--danger">Invalid Setup Key. Contact developer.</div>`;
+        alertEl.innerHTML = `<div class="alert alert--danger">⚠️ Invalid Setup Key</div>`;
         return;
       }
       if (!name || !phone || !pin || pin.length!==4 || !/^\d{4}$/.test(pin)) {
-        alertEl.innerHTML = `<div class="alert alert--danger">Enter valid name, phone and 4-digit PIN</div>`;
+        alertEl.innerHTML = `<div class="alert alert--danger">Fill valid name, phone and 4-digit PIN</div>`;
         return;
       }
       const btn = root.querySelector('#setupBtn');
@@ -52,42 +54,42 @@ export async function loginView({ root }) {
       btn.textContent = 'Creating...';
       try {
         const user = await registerUserInFirebase({ phone, pin, name, role: 'super_admin', stationIds: [] });
-        if (isDemo) {
-          const { setState } = await import('../state.js');
-          setState({ user: { uid: user.uid||user.id, phone, name, role: 'super_admin', stationIds: [] }, currentStationId: null });
-          location.hash = '#/dashboard';
-        } else {
-          await loginWithPhonePin(phone, pin);
-          location.hash = '#/dashboard';
-        }
+        const { setState } = await import('../state.js');
+        setState({ user: { uid: user.uid||user.id, phone, name, role: 'super_admin', stationIds: [] }, currentStationId: null });
+        location.hash = '#/dashboard';
       } catch(e){
         alertEl.innerHTML = `<div class="alert alert--danger">⚠️ ${e.message}</div>`;
         btn.disabled = false;
-        btn.textContent = 'Create Super Admin & Login';
+        btn.textContent = 'Create Super Admin';
       }
     });
     return;
   }
 
-  // PROD LOGIN - invite-only, no self-registration
+  // PROD LOGIN - Neumorphic Soft UI
   root.innerHTML = `
-    <div class="container" style="max-width:400px;padding-top:32px">
-      <div style="text-align:center;margin-bottom:28px">
-        <div class="brand" style="justify-content:center;font-size:30px"><div class="brand-mark">F</div> FuelOps</div>
-        <p class="page-sub" style="margin-top:8px">Fuel Station Daily Operations</p>
+    <div class="login-wrapper">
+      <div class="login-brand">
+        <div class="brand-mark">F</div>
+        <div style="font-weight:900;font-size:28px;letter-spacing:-0.04em">FuelOps</div>
+        <div style="color:var(--text-muted);font-size:13px;margin-top:4px;font-weight:600">Fuel Station Operations</div>
       </div>
 
-      <div class="neu-card">
-        <h2 style="font-size:22px;font-weight:800;text-align:center">Login 👋</h2>
-        <p style="text-align:center;color:var(--text-muted);font-size:13px;margin:8px 0 20px">Phone + 4-digit PIN — invite only</p>
+      <div class="login-card">
+        <h2>Welcome Back 👋</h2>
+        <p class="sub">Phone + 4-digit PIN • Invite only</p>
 
         <div id="loginAlert"></div>
 
-        <label class="label">Phone Number</label>
-        <input id="phoneInput" class="neu-input" type="tel" placeholder="+91  XXXXX XXXXX" inputmode="tel" autocomplete="tel" />
+        <div style="margin-top:8px">
+          <label class="label">Phone Number</label>
+          <div class="neu-card neu-card--inset" style="padding:4px;border-radius:16px">
+            <input id="phoneInput" class="neu-input" type="tel" placeholder="+91  XXXXX XXXXX" inputmode="tel" autocomplete="tel" style="box-shadow:none;background:transparent;border:none" />
+          </div>
+        </div>
 
         <div style="margin-top:18px">
-          <label class="label">PIN</label>
+          <label class="label">4-digit PIN</label>
           <div class="kbd-pin" id="pinDots">
             <div class="dot" data-idx="0">•</div>
             <div class="dot" data-idx="1">•</div>
@@ -99,17 +101,19 @@ export async function loginView({ root }) {
 
         <div class="numpad" id="numpad">
           ${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" data-num="${n}">${n}</button>`).join('')}
-          <button type="button" data-action="clear">⌫</button>
+          <button type="button" data-action="clear" style="font-size:18px">⌫</button>
           <button type="button" data-num="0">0</button>
-          <button type="button" data-action="submit">✓</button>
+          <button type="button" data-action="submit" style="color:var(--primary)">✓</button>
         </div>
 
-        <button id="loginBtn" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:10px">Login</button>
+        <button id="loginBtn" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:6px">Login</button>
 
-        <div style="text-align:center;margin-top:14px">
-          <p style="font-size:12px;color:var(--text-muted)">No account? Contact Developer to get invited.</p>
+        <div class="neu-card neu-card--inset" style="margin-top:18px;padding:12px;border-radius:14px;text-align:center">
+          <p style="font-size:11px;color:var(--text-muted);font-weight:600">🔒 Invite only • No self-registration<br>Contact Developer to get access</p>
         </div>
       </div>
+
+      <p style="font-size:10px;color:var(--text-muted);margin-top:18px;font-weight:600;letter-spacing:0.05em">NEUMORPHIC • SOFT UI • PWA • GITHUB PAGES</p>
     </div>
   `;
 
@@ -163,7 +167,7 @@ export async function loginView({ root }) {
       document.removeEventListener('keydown', onKey);
       location.hash = '#/dashboard';
     } catch (err) {
-      showAlert('⚠️ ' + (err.message || 'Login failed. Contact Developer.'), 'danger');
+      showAlert('⚠️ ' + (err.message || 'Login failed'), 'danger');
       pin = ''; renderPin();
     } finally {
       loginBtn.disabled = false;
