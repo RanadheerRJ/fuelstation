@@ -21,6 +21,7 @@ const topbar = document.getElementById('topbar');
 const offlineBanner = document.getElementById('offlineBanner');
 const stationBadge = document.getElementById('stationBadge');
 const logoutTop = document.getElementById('logoutTop');
+const refreshTop = document.getElementById('refreshTop');
 
 async function bootstrap() {
   await initFirebase();
@@ -71,6 +72,7 @@ function updateChrome(state) {
     topbar.style.display = 'flex';
     bottomNav.style.display = 'flex';
     logoutTop.style.display = 'inline-flex';
+    refreshTop.style.display = 'inline-flex';
     stationBadge.style.display = 'inline-flex';
     // station badge
     const { currentStationId } = state;
@@ -80,11 +82,120 @@ function updateChrome(state) {
       stationBadge.textContent = 'No station';
     }
     renderBottomNav(state.user.role);
+    ensureFloatingRefresh();
   } else {
     topbar.style.display = 'none';
     bottomNav.style.display = 'none';
     logoutTop.style.display = 'none';
+    refreshTop.style.display = 'none';
     stationBadge.style.display = 'none';
+    removeFloatingRefresh();
+  }
+}
+
+function ensureFloatingRefresh() {
+  if (document.getElementById('floatingRefresh')) return;
+  const btn = document.createElement('button');
+  btn.id = 'floatingRefresh';
+  btn.innerHTML = '↻';
+  btn.title = 'Refresh - Drag to move';
+  btn.style.cssText = `
+    position:fixed;
+    width:44px;height:44px;
+    border-radius:50%;
+    background:var(--card);
+    border:0.5px solid var(--border);
+    box-shadow:var(--shadow-md);
+    display:grid;place-items:center;
+    font-size:18px;
+    cursor:grab;
+    z-index:50;
+    user-select:none;
+    touch-action:none;
+    transition:box-shadow .15s ease, transform .1s ease;
+  `;
+  // Load saved position
+  const savedPos = JSON.parse(localStorage.getItem('fuelops_refresh_pos') || 'null');
+  if (savedPos) {
+    btn.style.left = savedPos.x + 'px';
+    btn.style.top = savedPos.y + 'px';
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+  } else {
+    btn.style.right = '16px';
+    btn.style.bottom = '100px';
+  }
+  
+  let isDragging = false;
+  let startX, startY, initialLeft, initialTop;
+  
+  btn.addEventListener('pointerdown', (e)=>{
+    isDragging = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = btn.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+    btn.setPointerCapture(e.pointerId);
+    btn.style.cursor = 'grabbing';
+  });
+  
+  btn.addEventListener('pointermove', (e)=>{
+    if (startX === undefined) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
+    if (isDragging) {
+      btn.style.left = (initialLeft + dx) + 'px';
+      btn.style.top = (initialTop + dy) + 'px';
+      btn.style.right = 'auto';
+      btn.style.bottom = 'auto';
+    }
+  });
+  
+  btn.addEventListener('pointerup', (e)=>{
+    btn.style.cursor = 'grab';
+    if (isDragging) {
+      localStorage.setItem('fuelops_refresh_pos', JSON.stringify({
+        x: parseInt(btn.style.left),
+        y: parseInt(btn.style.top)
+      }));
+      e.preventDefault();
+      setTimeout(()=>{ isDragging = false; startX = undefined; }, 100);
+      return;
+    }
+    // Click - refresh
+    startX = undefined;
+    doRefresh();
+  });
+  
+  // Prevent click after drag
+  btn.addEventListener('click', (e)=>{
+    if (isDragging) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+  
+  document.body.appendChild(btn);
+}
+
+function removeFloatingRefresh() {
+  document.getElementById('floatingRefresh')?.remove();
+}
+
+function doRefresh() {
+  const btn = document.getElementById('floatingRefresh');
+  if (btn) {
+    btn.style.transform = 'rotate(360deg)';
+    setTimeout(()=> btn.style.transform = '', 500);
+  }
+  // Trigger hashchange to reload current view
+  const currentHash = location.hash;
+  // Force reload of current view
+  if (window.dispatchEvent) {
+    // Simple page reload of data
+    location.reload();
   }
 }
 
@@ -126,6 +237,15 @@ function renderBottomNav(role) {
 document.getElementById('logoutTop')?.addEventListener('click', async ()=>{
   await logout();
   location.hash = '#/login';
+});
+
+document.getElementById('refreshTop')?.addEventListener('click', ()=>{
+  const btn = document.getElementById('refreshTop');
+  if (btn) {
+    btn.textContent = '⟳';
+    setTimeout(()=> btn.textContent = '↻', 800);
+  }
+  location.reload();
 });
 
 bootstrap();
