@@ -195,6 +195,7 @@ export async function shiftDetailView({ root, params }) {
               `).join('')}
             </div>
             ${isOwnerOfShift ? `<button id="fixAndResubmit" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:16px;min-height:52px;border-radius:14px;background:#fa541c;border-color:#fa541c;font-weight:700;font-size:15px">🔧 Fix & Resubmit Shift</button>` : ''}
+            ${canReview ? `<button id="adminFix" class="neu-btn neu-btn--block" style="margin-top:10px;min-height:48px;border-radius:12px;background:#232f3e;color:white;font-weight:700">🔓 Admin: Reopen & Fix What's Wrong</button><p style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:6px">Admin can fix readings and approve directly — its money bro, kastam 💸</p>` : ''}
           </div>
         ` : ''}
 
@@ -203,6 +204,7 @@ export async function shiftDetailView({ root, params }) {
             <h3 style="font-weight:700;color:#cf1322">⚠️ Rejected</h3>
             <p style="font-size:13px;margin-top:8px;line-height:1.4">${shift.rejectionReason}</p>
             ${isOwnerOfShift ? `<button id="fixAndResubmit" class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:14px;min-height:48px;border-radius:12px;font-weight:700">Fix & Resubmit</button>` : ''}
+            ${canReview ? `<button id="adminFix" class="neu-btn neu-btn--block" style="margin-top:10px;min-height:48px;border-radius:12px;background:#232f3e;color:white;font-weight:700">🔓 Admin: Reopen & Fix & Approve</button><p style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:6px">Admin can fix and approve directly — money matters</p>` : ''}
           </div>
         ` : ''}
 
@@ -355,6 +357,10 @@ export async function shiftDetailView({ root, params }) {
       try { await rejectShift(shift.id, reason); alert('Rejected'); location.hash='#/shifts'; } catch(e){ alert(e.message); }
     });
     root.querySelector('#fixAndResubmit')?.addEventListener('click', ()=>{ location.hash = `#/shifts/${shift.id}/close`; });
+    root.querySelector('#adminFix')?.addEventListener('click', ()=>{
+      if (!confirm(`Admin: Reopen and fix this rejected shift?\n\nYou will be able to:\n• See what's wrong\n• Edit closing readings\n• Fix payments\n• Approve directly\n\nIts money bro, kastam 💸\n\nContinue?`)) return;
+      location.hash = `#/shifts/${shift.id}/close?admin=1`;
+    });
     root.querySelector('#exportCsv')?.addEventListener('click', ()=>{
       const csv = generateShiftCSV(shift, credits, expenses);
       const blob = new Blob([csv], { type:'text/csv' });
@@ -370,6 +376,10 @@ export async function closeShiftView({ root, params }) {
   if (!shift || (shift.status!=='ACTIVE' && shift.status!=='REJECTED')) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>Shift not active or rejected</p></div></div>`; return; }
   const activePrices = await getActivePrices(shift.stationId);
   const isResubmit = shift.status === 'REJECTED';
+  const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const isAdminFix = urlParams.get('admin')==='1' || location.hash.includes('admin=1');
+  const { user } = getState();
+  const canReview = ['owner','manager','admin','super_admin'].includes(user.role);
 
   root.innerHTML = `
     <div class="container" style="max-width:480px;margin:0 auto;padding-bottom:100px">
@@ -437,9 +447,17 @@ export async function closeShiftView({ root, params }) {
       <div id="alertBox" style="margin-top:16px"></div>
     </div>
 
-    <!-- Sticky handy submit bar -->
+    <!-- Sticky handy submit bar - admin can fix and approve directly -->
     <div style="position:fixed;bottom:0;left:0;right:0;background:white;border-top:1px solid #eee;padding:12px 16px;z-index:100;box-shadow:0 -4px 20px rgba(0,0,0,0.08);max-width:480px;margin:0 auto;left:50%;transform:translateX(-50%);width:100%;border-radius:16px 16px 0 0">
-      <button id="submitClose" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:56px;border-radius:14px;background:${isResubmit?'#fa541c':'#232f3e'};border-color:${isResubmit?'#fa541c':'#232f3e'};font-weight:700;font-size:16px">${isResubmit?'🔧 Fix & Resubmit for Review':'✓ Submit & Close Shift'}</button>
+      ${isAdminFix && canReview ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <button id="submitClose" class="neu-btn neu-btn--primary" style="min-height:52px;border-radius:12px;background:#fa541c;border-color:#fa541c;font-weight:700;font-size:14px">🔧 Fix & Resubmit</button>
+          <button id="adminApprove" class="neu-btn neu-btn--primary" style="min-height:52px;border-radius:12px;background:#52c41a;border-color:#52c41a;font-weight:700;font-size:14px">✓ Fix & Approve Directly</button>
+        </div>
+        <p style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:8px">Admin: Fix what's wrong and approve — money bro 💸</p>
+      ` : `
+        <button id="submitClose" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:56px;border-radius:14px;background:${isResubmit?'#fa541c':'#232f3e'};border-color:${isResubmit?'#fa541c':'#232f3e'};font-weight:700;font-size:16px">${isResubmit?'🔧 Fix & Resubmit for Review':'✓ Submit & Close Shift'}</button>
+      `}
     </div>
   `;
 
@@ -530,7 +548,7 @@ export async function closeShiftView({ root, params }) {
   ['pay_cash','pay_card','pay_upi','pay_credit','pay_other'].forEach(id=> root.querySelector('#'+id).addEventListener('input', recalc));
   recalc();
 
-  root.querySelector('#submitClose').addEventListener('click', async ()=>{
+  async function handleSubmit(isDirectApprove=false) {
     const closingReadings = {};
     for (const inp of closingInputs) {
       if (!inp.value) { root.querySelector('#alertBox').innerHTML=`<div class="alert alert--danger">Enter closing reading for all nozzles</div>`; return; }
@@ -540,17 +558,28 @@ export async function closeShiftView({ root, params }) {
     const closingNote = root.querySelector('#closingNote').value.trim();
 
     try {
-      // Save quick expenses
       for (const exp of quickExpenses) {
         await addExpense({ stationId: shift.stationId, shiftId: shift.id, category: exp.category, amount: exp.amount, description: exp.description });
       }
-      // Save closing note
       if (closingNote) {
         await addNote({ stationId: shift.stationId, shiftId: shift.id, text: closingNote });
       }
-      await closeShift(shift.id, { closingReadings, payments });
-      location.hash = `#/shifts/${shift.id}`;
+      const updatedShift = await closeShift(shift.id, { closingReadings, payments });
+      if (isDirectApprove && canReview) {
+        // Admin fixing and approving directly
+        await approveShift(shift.id);
+        alert(`✅ Fixed and Approved! Owner will collect money now.`);
+        location.hash = `#/shifts/${shift.id}`;
+      } else {
+        location.hash = `#/shifts/${shift.id}`;
+      }
     } catch(e){ root.querySelector('#alertBox').innerHTML=`<div class="alert alert--danger">⚠️ ${e.message}</div>`; }
+  }
+
+  root.querySelector('#submitClose').addEventListener('click', ()=> handleSubmit(false));
+  root.querySelector('#adminApprove')?.addEventListener('click', ()=> {
+    if (!confirm(`Admin: Fix and Approve directly?\n\nThis will:\n• Fix what's wrong\n• Approve shift\n• Owner can collect money now\n\nContinue?`)) return;
+    handleSubmit(true);
   });
 }
 

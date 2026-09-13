@@ -12,39 +12,56 @@ export async function pricesView({ root }) {
   const activePrices = await getActivePrices(stationId);
   const history = await getPrices(stationId);
 
+  const isOwner = user.role === 'owner';
+  const isAttendant = user.role === 'attendant';
   const canManage = ['owner','admin','manager'].includes(user.role);
+
+  if (isAttendant) {
+    root.innerHTML = `
+      <div class="container" style="max-width:480px;margin:0 auto">
+        <h1 class="page-title" style="font-size:20px">Fuel Prices</h1>
+        <p class="page-sub" style="margin-top:4px">${station.name} • Current prices only • No history</p>
+        <div class="grid" style="margin-top:16px;gap:12px">
+          ${['Petrol','Diesel','Premium Petrol','CNG'].map(ft=>{
+            const p = activePrices[ft];
+            return `<div class="neu-card" style="padding:16px;border-radius:14px;text-align:center"><div style="font-weight:700;font-size:13px">${ft}</div><div style="font-size:22px;font-weight:800;margin-top:8px">${p?formatCurrency(p.price)+' /L': 'Not set'}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${p? 'Active now' : ''}</div></div>`;
+          }).join('')}
+        </div>
+        <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:10px;border:0.5px solid var(--border)"><div style="font-size:11px;color:var(--text-secondary);text-align:center">🔒 Attendant view: Only current active prices. No price history, no edit. Owner/Manager manages prices.</div></div>
+      </div>
+    `;
+    return;
+  }
 
   root.innerHTML = `
     <div class="container">
       <h1 class="page-title">Fuel Prices</h1>
-      <p class="page-sub">${station.name} • Live prices</p>
-
-      <div class="grid" style="margin-top:18px">
+      <p class="page-sub">${station.name} • Live prices • ${isOwner ? 'Owner • Full visibility' : 'Manager • Can edit'}</p>
+      <div class="grid" style="margin-top:16px;gap:12px">
         ${['Petrol','Diesel','Premium Petrol','CNG'].map(ft=>{
           const p = activePrices[ft];
           return `
-            <div class="neu-card">
+            <div class="neu-card" style="padding:16px;border-radius:14px">
               <div style="display:flex;justify-content:space-between;align-items:center">
-                <div><div style="font-weight:800" class="fuel-${ft.toLowerCase().replace(' ','-')}">${ft}</div><div style="font-size:22px;font-weight:900;margin-top:6px">${p?formatCurrency(p.price)+' / L': 'Not set'}</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">${p? 'From '+formatDateTime(p.effectiveFrom):''}</div></div>
-                ${canManage ? `<button class="neu-btn neu-btn--small edit-price" data-fuel="${ft}">Edit</button>` : ''}
+                <div><div style="font-weight:700;font-size:14px">${ft}</div><div style="font-size:22px;font-weight:800;margin-top:6px">${p?formatCurrency(p.price)+' /L': 'Not set'}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${p? 'From '+formatDateTime(p.effectiveFrom):''}</div></div>
+                ${canManage ? `<button class="neu-btn edit-price" data-fuel="${ft}" style="min-height:40px;padding:0 14px;border-radius:10px;font-weight:600">Edit</button>` : ''}
               </div>
             </div>
           `;
         }).join('')}
       </div>
-
-      <div class="neu-card" style="margin-top:18px">
-        <h3 style="font-weight:800;font-size:14px">Price History</h3>
-        <div class="table-wrap" style="margin-top:12px">
-          <table>
-            <thead><tr><th>Fuel</th><th>Price</th><th>From</th><th>To</th></tr></thead>
-            <tbody>
-              ${history.slice(0,20).map(h=>`<tr><td>${h.fuelType}</td><td>${formatCurrency(h.price)}</td><td>${formatDateTime(h.effectiveFrom)}</td><td>${h.effectiveTo? formatDateTime(h.effectiveTo):'<span class="badge badge--success">Active</span>'}</td></tr>`).join('') || `<tr><td colspan="4">No history</td></tr>`}
-            </tbody>
-          </table>
+      ${isOwner || canManage ? `
+        <div class="neu-card" style="margin-top:18px;padding:16px;border-radius:14px">
+          <h3 style="font-weight:700;font-size:14px">Price History • Owner/Manager Only</h3>
+          <div class="table-wrap" style="margin-top:12px">
+            <table>
+              <thead><tr><th>Fuel</th><th>Price</th><th>From</th><th>To</th></tr></thead>
+              <tbody>${history.slice(0,20).map(h=>`<tr><td>${h.fuelType}</td><td>${formatCurrency(h.price)}</td><td>${formatDateTime(h.effectiveFrom)}</td><td>${h.effectiveTo? formatDateTime(h.effectiveTo):'<span class="badge badge--success">Active</span>'}</td></tr>`).join('') || `<tr><td colspan="4">No history</td></tr>`}</tbody>
+            </table>
+          </div>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:10px">Historical prices never overwritten. New price closes previous.</p>
         </div>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">Historical prices are never overwritten. New price closes previous active price with effectiveTo.</p>
-      </div>
+      ` : ''}
     </div>
     <div id="modalRoot"></div>
   `;
@@ -56,12 +73,12 @@ export async function pricesView({ root }) {
 
   function openPriceModal(fuelType) {
     modalRoot.innerHTML = `
-      <div class="modal-backdrop" id="backdrop"><div class="modal">
-        <div style="display:flex;justify-content:space-between"><h3 style="font-weight:800">Update ${fuelType} Price</h3><button id="closeM" class="neu-btn neu-btn--small">✕</button></div>
-        <div class="grid" style="margin-top:14px">
-          <div><label class="label">New Price (₹ / L)</label><input id="priceInput" class="neu-input" type="number" step="0.01" placeholder="e.g. 105.50"></div>
-          <button id="savePrice" class="neu-btn neu-btn--primary neu-btn--block">Update Price</button>
-          <p style="font-size:11px;color:var(--text-muted)">This will close previous active price and start new history entry.</p>
+      <div class="modal-backdrop" id="backdrop"><div class="modal" style="border-radius:16px;max-width:400px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Update ${fuelType} Price</h3><button id="closeM" class="neu-btn" style="min-height:36px;min-width:36px;border-radius:50%">✕</button></div>
+        <div class="grid" style="margin-top:16px;gap:14px">
+          <div><label class="label">New Price (₹ / L)</label><input id="priceInput" class="neu-input" type="number" step="0.01" placeholder="e.g. 105.50" style="min-height:48px;border-radius:12px;font-size:16px;font-weight:600"></div>
+          <button id="savePrice" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Update Price</button>
+          <p style="font-size:11px;color:var(--text-secondary)">This will close previous active price and start new history entry.</p>
         </div>
       </div></div>`;
     modalRoot.querySelector('#backdrop').addEventListener('click', e=>{ if(e.target.id==='backdrop') modalRoot.innerHTML=''; });
