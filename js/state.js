@@ -50,8 +50,8 @@ export function clearState() {
   listeners.forEach(fn => fn(state));
 }
 
-// Demo data persistence - v7 - 10 digit phone, single super_admin
-const DEMO_KEY = 'fuelops_demo_v8_simple_10digit_dev_user';
+// Demo data persistence - v9 - single super_admin final, 10-digit, Dev vs User, Firebase real
+const DEMO_KEY = 'fuelops_demo_v9_single_superadmin_final';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);

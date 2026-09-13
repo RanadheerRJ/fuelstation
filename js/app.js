@@ -12,6 +12,7 @@ import { shiftsListView, startShiftView, shiftDetailView, closeShiftView } from 
 import { reportsView, auditView } from './views/reports.js';
 import { settingsView } from './views/settings.js';
 import { superAdminView } from './views/superAdmin.js';
+import { devSetupView } from './views/devSetup.js';
 import { logout } from './auth.js';
 
 const appRoot = document.getElementById('appRoot');
@@ -27,6 +28,8 @@ async function bootstrap() {
 
   // Register routes (hash based)
   registerRoute('/login', loginView);
+  registerRoute('/dev-setup', devSetupView);
+  registerRoute('/setup', devSetupView);
   registerRoute('/dashboard', dashboardView);
   registerRoute('/stations', stationsView);
   registerRoute('/pumps', pumpsView);

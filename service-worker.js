@@ -1,5 +1,5 @@
-// FuelOps Service Worker - PROD FINAL - invite only - super admin
-const CACHE_NAME = 'fuelops-v12-firebase-real-20260913';
+// FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
+const CACHE_NAME = 'fuelops-v13-single-superadmin-fix-20260913';
 const APP_SHELL = [
   './',
   './index.html',
@@ -32,6 +32,7 @@ const APP_SHELL = [
   './js/views/reports.js',
   './js/views/settings.js',
   './js/views/superAdmin.js',
+  './js/views/devSetup.js',
   './assets/icons/icon.svg'
 ];
 

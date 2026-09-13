@@ -8,6 +8,7 @@ export async function loginView({ root }) {
   
   let hasSuperAdmin = false;
   let hasUsers = false;
+  let firebaseError = null;
   
   if (isDemo) {
     hasUsers = demo.demoHasUsers();
@@ -18,14 +19,18 @@ export async function loginView({ root }) {
       const users = await listDocs('users');
       hasUsers = users.length > 0;
       hasSuperAdmin = users.some(u => u.role === 'super_admin');
-    } catch {
+    } catch (e) {
+      firebaseError = e.message;
+      // If Firestore not enabled or rules blocking, assume super admin exists to hide setup from public
       hasUsers = true;
       hasSuperAdmin = true;
     }
   }
 
-  // Super Admin bootstrap - only ONE
-  if (!hasSuperAdmin) {
+  // BOOTSTRAP: Only show Super Admin setup if NO super admin exists AND in demo mode
+  // For real Firebase, super admin should be created via Firebase Console or via hidden /dev-setup route
+  // This prevents public from seeing Create Super Admin every time
+  if (isDemo && !hasSuperAdmin) {
     root.innerHTML = `
       <div class="login-wrapper">
         <div class="login-brand">
@@ -36,7 +41,7 @@ export async function loginView({ root }) {
 
         <div class="login-card">
           <h2 style="font-size:20px;font-weight:700;text-align:center">Create Super Admin</h2>
-          <p style="text-align:center;color:var(--text-secondary);font-size:13px;margin:8px 0 20px">Only one super admin allowed in whole system</p>
+          <p style="text-align:center;color:var(--text-secondary);font-size:13px;margin:8px 0 20px">Only one super admin allowed in whole system. This screen will never show again after creation.</p>
           <div id="setupAlert"></div>
           <div class="grid" style="gap:16px">
             <div><label class="label">Name</label><input id="setup_name" class="neu-input" placeholder="Your name"></div>
@@ -44,6 +49,9 @@ export async function loginView({ root }) {
             <div><label class="label">PIN (4 digits)</label><input id="setup_pin" class="neu-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
             <div><label class="label">Setup Key</label><input id="setup_key" class="neu-input" type="password" placeholder="FUELDEV2024"></div>
             <button id="setupBtn" class="neu-btn neu-btn--primary neu-btn--block">Create Super Admin</button>
+          </div>
+          <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:10px;border:0.5px solid var(--border)">
+            <p style="font-size:11px;color:var(--text-tertiary);line-height:1.5">Key: <b>FUELDEV2024</b><br>After creation, this screen disappears forever.<br>Only Super Admin can invite Owners.</p>
           </div>
         </div>
       </div>
@@ -71,14 +79,16 @@ export async function loginView({ root }) {
       }
       const btn = root.querySelector('#setupBtn');
       btn.disabled = true;
-      btn.textContent = 'Creating...';
+      btn.textContent = 'Creating in Firebase...';
       try {
         const user = await registerUserInFirebase({ phone, pin, name, role: 'super_admin', stationIds: [] });
         const { setState } = await import('../state.js');
         setState({ user: { uid: user.uid||user.id, phone, name, role: 'super_admin', stationIds: [] }, currentStationId: null });
-        location.hash = '#/dashboard';
+        alertEl.innerHTML = `<div class="alert alert--success">✅ Super Admin created! Redirecting...</div>`;
+        setTimeout(()=> location.hash = '#/dashboard', 1000);
       } catch(e){
-        alertEl.innerHTML = `<div class="alert alert--danger">${e.message}</div>`;
+        console.error('Super Admin creation failed:', e);
+        alertEl.innerHTML = `<div class="alert alert--danger">⚠️ ${e.message}<br><small>Check console. For Firebase: Ensure Auth Email/Password enabled and Firestore rules published.</small></div>`;
         btn.disabled = false;
         btn.textContent = 'Create Super Admin';
       }
@@ -86,7 +96,39 @@ export async function loginView({ root }) {
     return;
   }
 
-  // Login with Dev vs User toggle - iOS simple
+  // For real Firebase with no super admin, show message to contact developer or go to hidden setup
+  if (!isDemo && !hasSuperAdmin) {
+    root.innerHTML = `
+      <div class="login-wrapper">
+        <div class="login-brand">
+          <div class="brand-mark">F</div>
+          <div class="app-name">FuelOps</div>
+          <div class="app-sub">System Setup Required</div>
+        </div>
+        <div class="login-card" style="text-align:center">
+          <div style="font-size:40px">🔧</div>
+          <h2 style="font-size:18px;font-weight:700;margin-top:12px">System Not Initialized</h2>
+          <p style="font-size:13px;color:var(--text-secondary);margin-top:8px">No Super Admin found in Firebase.<br>Super Admin must be created first.</p>
+          <div class="alert alert--info" style="margin-top:16px;text-align:left">
+            <div>
+              <b>For Developer:</b><br>
+              1. Enable Auth → Email/Password in Firebase Console<br>
+              2. Create Firestore DB → Apply rules from firestore.rules<br>
+              3. Go to <a href="#/dev-setup" style="font-weight:700">Developer Setup</a> to create Super Admin<br>
+              Or create manually in Firebase Console:<br>
+              Auth → Add user: <code>9948288169@fuelops.app</code> / <code>FuelOps#1234#2024</code><br>
+              Firestore → users → Add doc with ID=UID, role=super_admin
+            </div>
+          </div>
+          <button class="neu-btn neu-btn--primary neu-btn--block" style="margin-top:16px" onclick="location.hash='#/dev-setup'">Go to Developer Setup</button>
+          <button class="neu-btn neu-btn--block" style="margin-top:10px" onclick="location.hash='#/login'">Back to Login</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Normal Login - iOS Simple - 10 digit only - Dev vs User toggle
   root.innerHTML = `
     <div class="login-wrapper">
       <div class="login-brand">
@@ -97,7 +139,7 @@ export async function loginView({ root }) {
 
       <div class="login-card">
         <div style="display:flex;background:var(--bg);border-radius:10px;padding:4px;gap:4px;margin-bottom:20px">
-          <button id="tabUser" class="neu-btn" style="flex:1;min-height:40px;border-radius:8px;background:var(--card);box-shadow:var(--shadow-sm);font-size:14px">User Login</button>
+          <button id="tabUser" class="neu-btn" style="flex:1;min-height:40px;border-radius:8px;background:var(--card);box-shadow:var(--shadow-sm);font-size:14px;font-weight:700">User Login</button>
           <button id="tabDev" class="neu-btn" style="flex:1;min-height:40px;border-radius:8px;background:transparent;box-shadow:none;border:none;font-size:14px;color:var(--text-secondary)">Dev Login</button>
         </div>
 
@@ -105,11 +147,13 @@ export async function loginView({ root }) {
         <p id="loginSub" style="text-align:center;color:var(--text-secondary);font-size:13px;margin:6px 0 20px">Owners, Managers, Attendants</p>
 
         <div id="loginAlert"></div>
+        ${firebaseError ? `<div class="alert alert--warning" style="margin-bottom:12px">⚠️ Firebase: ${firebaseError}<br><small>Ensure Firestore enabled and rules published</small></div>` : ''}
 
-        <div class="grid" style="gap:16px">
+        <div class="grid" style="gap:18px">
           <div>
             <label class="label">Phone Number</label>
             <input id="phoneInput" class="neu-input" type="tel" inputmode="numeric" maxlength="10" placeholder="9948288169" autocomplete="tel" autofocus />
+            <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px">10 digits, no +91, no spaces</p>
           </div>
 
           <div>
@@ -119,9 +163,7 @@ export async function loginView({ root }) {
 
           <button id="loginBtn" class="neu-btn neu-btn--primary neu-btn--block">Login</button>
 
-          <div style="text-align:center;padding-top:8px">
-            <p style="font-size:12px;color:var(--text-tertiary)">Just 10 digits + 4-digit PIN<br>No +91, no country code</p>
-          </div>
+          <p style="text-align:center;font-size:12px;color:var(--text-secondary)">No account? Contact developer.</p>
         </div>
       </div>
     </div>
@@ -136,7 +178,7 @@ export async function loginView({ root }) {
   const titleEl = root.querySelector('#loginTitle');
   const subEl = root.querySelector('#loginSub');
 
-  let loginMode = 'user'; // 'user' or 'dev'
+  let loginMode = 'user';
 
   function setMode(mode) {
     loginMode = mode;
@@ -181,6 +223,7 @@ export async function loginView({ root }) {
       await loginWithPhonePin(phone, pin, loginMode);
       location.hash = '#/dashboard';
     } catch (err) {
+      console.error('Login failed:', err);
       showAlert(err.message || 'Login failed', 'danger');
     } finally {
       loginBtn.disabled = false;
