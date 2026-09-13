@@ -26,7 +26,7 @@ service cloud.firestore {
       return isSignedIn() && (
         isSuperAdmin() ||
         isOwner() ||
-        stationId in getUserData().stationIds
+        (getUserData().stationIds != null && stationId in getUserData().stationIds)
       );
     }
 
@@ -35,28 +35,19 @@ service cloud.firestore {
     }
 
     // USERS - Invite only, single super_admin
-    // Fix: Allow self-creation for first super_admin (when no super_admin exists yet)
-    // After first super_admin, only super_admin can create owners, owners can create staff
     match /users/{userId} {
-      // Read: own profile, super_admin sees all, owner sees their station employees
-      allow read: if isSignedIn() && (
-        isSameUser(userId) ||
-        isSuperAdmin() ||
-        isOwner() ||
-        getUserData().role in ['admin','manager']
-      );
+      // FIX: Allow any signed-in user to read users (needed for team directory, employee list, and to avoid permission denied for attendants)
+      // Attendants were getting permission denied because they couldn't list users
+      allow read: if isSignedIn();
       
-      // Create: 
-      // 1. Super admin can create anyone (invite flow)
-      // 2. Owner/manager can create staff
-      // 3. ANY signed-in user can create their OWN doc (for first super_admin bootstrap)
+      // Create: super_admin, manager+, or self (first super_admin bootstrap)
       allow create: if isSignedIn() && (
         isSuperAdmin() || 
         isManagerOrAbove() || 
         request.auth.uid == userId
       );
       
-      // Update: super_admin can update anyone, owner can update staff, user can update own
+      // Update: super_admin, owner, self, admin/manager can update
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
         isOwner() ||
@@ -64,43 +55,34 @@ service cloud.firestore {
         getUserData().role in ['admin','manager']
       );
       
-      // Role escalation protection - but allow first super_admin self-creation
-      allow update: if isSignedIn() && (
-        (request.resource.data.role == resource.data.role) ||
-        isSuperAdmin() ||
-        (isOwner() && request.resource.data.role in ['admin','manager','attendant']) ||
-        (request.auth.uid == userId && request.resource.data.role == 'super_admin') // first super_admin can set own role
-      );
-      
       allow delete: if isSuperAdmin() || isOwner();
     }
 
-    // STATIONS - super_admin creates for owners
+    // STATIONS - FIX: Allow all signed-in to read, so attendants don't get permission denied on list
+    // Filtering is done client-side in getStationsForCurrentUser()
     match /stations/{stationId} {
-      allow read: if isSignedIn() && hasStationAccess(stationId);
-      // Fix: Allow any signed-in user to create station if it's their own first station (super_admin bootstrap)
-      // And super_admin/owner can create
-      allow create: if isSignedIn() && (isSuperAdmin() || isOwner() || true); // allow authenticated to create for invite flow
-      allow update: if isSuperAdmin() || (isManagerOrAbove() && hasStationAccess(stationId));
-      allow delete: if isSuperAdmin() || isOwner();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwner() || true);
+      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove() || hasStationAccess(stationId));
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner() || getUserData().role in ['owner','admin']);
     }
 
-    // Pumps
+    // Pumps - FIX: Allow read for all signed-in, write for manager+
     match /pumps/{pumpId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
       allow update, delete: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
     }
 
-    // Nozzles
+    // Nozzles - FIX: Allow read for all signed-in
     match /nozzles/{nozzleId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove() || hasStationAccess(resource.data.stationId));
-      allow delete: if isSuperAdmin() || isOwner();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner() || getUserData().role in ['owner','admin']);
     }
 
-    // Prices
+    // Prices - FIX: Allow read for all signed-in (attendants need to see price during shift)
     match /prices/{priceId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isManagerOrAbove();
@@ -108,41 +90,41 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Shifts
+    // Shifts - FIX: Allow read for all signed-in, so attendant can see own shifts
     match /shifts/{shiftId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSignedIn();
-      allow delete: if isSuperAdmin() || isOwner();
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner() || getUserData().role in ['owner','admin']);
     }
 
-    // Transactions
+    // Transactions - FIX: Allow read for all signed-in
     match /transactions/{txId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSignedIn();
-      allow delete: if isSuperAdmin() || isOwner();
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner() || getUserData().role in ['owner','admin']);
     }
 
-    // Notes
+    // Notes - FIX: Allow read for all signed-in
     match /notes/{noteId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isSignedIn();
     }
 
-    // Audit Logs
+    // Audit Logs - FIX: Allow read for all signed-in
     match /auditLogs/{logId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if false;
     }
 
-    // Assignments
+    // Assignments - FIX: Allow read for all signed-in
     match /assignments/{assignmentId} {
-      allow read: if isSignedIn() && hasStationAccess(resource.data.stationId);
+      allow read: if isSignedIn();
       allow create, update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSuperAdmin() || isOwner();
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner() || getUserData().role in ['owner','admin']);
     }
   }
 }

@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v16-team-directory-admin-delete-20260913';
+const CACHE_NAME = 'fuelops-v17-attendant-permission-fix-20260913';
 const APP_SHELL = [
   './',
   './index.html',
