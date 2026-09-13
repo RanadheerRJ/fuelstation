@@ -43,14 +43,14 @@ export async function getStationById(id) { return await getDocById('stations', i
 
 export async function deleteStation(id) {
   const { user } = getState();
-  // Super Admin can delete any, Owner/Admin can delete their own station
   const isSuperAdmin = user?.role === 'super_admin';
-  const isOwnerOrAdmin = ['owner','admin'].includes(user?.role);
+  const isOwner = user?.role === 'owner';
   
-  if (!isSuperAdmin && !isOwnerOrAdmin) throw new Error('Only Super Admin / Owner / Admin can delete stations');
+  // Only Station Owner and Super Admin can delete
+  if (!isSuperAdmin && !isOwner) throw new Error('Only Station Owner can delete stations');
   
-  // For non-super-admin, check if station belongs to them
-  if (!isSuperAdmin) {
+  // For owner, check if station belongs to them
+  if (isOwner && !isSuperAdmin) {
     const all = await listDocs('stations');
     const station = all.find(s => s.id === id);
     if (!station) throw new Error('Station not found');
@@ -78,7 +78,7 @@ export async function deleteStation(id) {
     await mod.deleteDoc(mod.doc(db, 'stations', id));
   }
   
-  await logAudit({ userId: user?.uid, stationId: id, action: 'STATION_DELETED', metadata: { stationId: id, by: user.role } });
+  // Audit log removed - no longer logging
   return true;
 }
 
@@ -86,19 +86,17 @@ export async function resetStationData(stationId) {
   const { getDbInstance, loadFirestoreModule, getIsDemo } = await import('../firebase.js');
   const { user } = getState();
   const isSuperAdmin = user?.role === 'super_admin';
-  const isOwnerOrAdmin = ['owner','admin','manager'].includes(user?.role);
+  const isOwner = user?.role === 'owner';
   
-  // Allow super_admin, owner, admin, manager to reset their station
-  if (!isSuperAdmin && !isOwnerOrAdmin) throw new Error('Not allowed to reset');
+  // Only Station Owner and Super Admin can reset
+  if (!isSuperAdmin && !isOwner) throw new Error('Only Station Owner can reset data');
   
-  if (!isSuperAdmin && user) {
-    // Check if user has access to this station
+  if (isOwner && !isSuperAdmin && user) {
     const hasAccess = (user.stationIds||[]).includes(stationId);
-    if (!hasAccess && user.role !== 'owner') {
-      // For owner, also check if they own it via stations list
+    if (!hasAccess) {
       const allStations = await listDocs('stations');
       const station = allStations.find(s => s.id === stationId);
-      if (station && station.ownerId !== user.uid) {
+      if (!station || station.ownerId !== user.uid) {
         throw new Error('You can only reset your own station');
       }
     }
@@ -111,28 +109,20 @@ export async function resetStationData(stationId) {
     let data = getDemoData();
     if (!data) return;
     
-    const before = {
-      pumps: data.pumps?.length||0,
-      nozzles: data.nozzles?.length||0,
-      prices: data.prices?.length||0,
-      shifts: data.shifts?.length||0,
-    };
-    
     data.pumps = (data.pumps||[]).filter(p => p.stationId !== stationId);
     data.nozzles = (data.nozzles||[]).filter(n => n.stationId !== stationId);
     data.prices = (data.prices||[]).filter(p => p.stationId !== stationId);
     data.shifts = (data.shifts||[]).filter(s => s.stationId !== stationId);
     data.transactions = (data.transactions||[]).filter(t => t.stationId !== stationId);
     data.notes = (data.notes||[]).filter(n => n.stationId !== stationId);
-    data.auditLogs = (data.auditLogs||[]).filter(a => a.stationId !== stationId);
     data.assignments = (data.assignments||[]).filter(a => a.stationId !== stationId);
     
     setDemoData(data);
-    console.log(`[Reset Station ${stationId}] Deleted: pumps ${before.pumps}->${data.pumps.length}, nozzles ${before.nozzles}->${data.nozzles.length}, prices ${before.prices}->${data.prices.length}, shifts ${before.shifts}->${data.shifts.length}`);
+    console.log(`[Reset Station ${stationId}] Owner reset completed`);
   } else {
     const mod = await loadFirestoreModule();
     const db = getDbInstance();
-    const collections = ['pumps','nozzles','prices','shifts','transactions','notes','auditLogs','assignments'];
+    const collections = ['pumps','nozzles','prices','shifts','transactions','notes','assignments'];
     
     for (const coll of collections) {
       const docs = await queryDocs(coll, d => d.stationId === stationId);
@@ -144,6 +134,4 @@ export async function resetStationData(stationId) {
       }
     }
   }
-  
-  await logAudit({ userId: user?.uid, stationId, action: 'STATION_DATA_RESET', metadata: { stationId, by: user?.role } });
 }

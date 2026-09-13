@@ -76,23 +76,8 @@ export async function queryDocs(collectionName, predicate) {
   return all.filter(predicate);
 }
 
-// Audit log helper
-export async function logAudit({ userId, stationId, action, metadata={} }) {
-  const entry = {
-    userId,
-    stationId: stationId || null,
-    action,
-    timestamp: new Date().toISOString(),
-    metadata,
-  };
-  if (getIsDemo()) {
-    demo.demoAdd('auditLogs', entry);
-  } else {
-    try {
-      const mod = await loadFirestoreModule();
-      const db = getDbInstance();
-      const coll = mod.collection(db, 'auditLogs');
-      await mod.addDoc(coll, { ...entry, timestamp: mod.serverTimestamp() });
-    } catch(e){ console.warn('audit log failed', e); }
-  }
+// Audit log removed as per requirement - no-op
+export async function logAudit() {
+  // Audit log disabled - only station owner can destroy data, no audit trail needed
+  return;
 }

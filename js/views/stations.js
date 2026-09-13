@@ -5,8 +5,8 @@ export async function stationsView({ root }) {
   const { user } = getState();
   const canCreate = ['owner','admin','manager','super_admin'].includes(user.role);
   const isSuperAdmin = user.role === 'super_admin';
-  const isAdmin = ['owner','admin','super_admin'].includes(user.role);
-  const isManagerOrAbove = ['owner','admin','manager','super_admin'].includes(user.role);
+  const isOwner = user.role === 'owner';
+  const canDestroy = isOwner || isSuperAdmin; // Only owner and super_admin can destroy
   const stations = await getStationsForCurrentUser();
 
   root.innerHTML = `
@@ -17,7 +17,8 @@ export async function stationsView({ root }) {
       </div>
 
       ${isSuperAdmin ? `<div class="alert alert--info" style="margin-top:12px"><b>Super Admin:</b> Select, Edit, Team, Reset Data, Delete any station. Phone directory shows full family tree.</div>` : ''}
-      ${isAdmin && !isSuperAdmin ? `<div class="alert alert--info" style="margin-top:12px"><b>Admin Powers:</b> You can reset data and delete your own stations. View Team Directory to see who is there.</div>` : ''}
+      ${isOwner ? `<div class="alert alert--info" style="margin-top:12px"><b>Owner Powers:</b> Only you can reset data and delete your stations. View Team Directory to see who is there.</div>` : ''}
+      ${!canDestroy ? `<div class="alert alert--warning" style="margin-top:12px">🔒 Only Station Owner can reset or delete station data.</div>` : ''}
 
       <div class="list" style="margin-top:18px">
         ${stations.map(s=>`
@@ -32,8 +33,8 @@ export async function stationsView({ root }) {
                 <button class="neu-btn neu-btn--small neu-btn--primary select-btn" data-id="${s.id}" style="font-size:12px">Select</button>
                 <button class="neu-btn neu-btn--small team-btn" data-id="${s.id}" style="font-size:11px;background:#f0f0ff;border:0.5px solid #d0d0ff;color:#4c1d95">👥 Team</button>
                 ${canCreate ? `<button class="neu-btn neu-btn--small edit-btn" data-id="${s.id}" style="font-size:12px">Edit</button>` : ''}
-                ${isManagerOrAbove ? `<button class="neu-btn neu-btn--small reset-btn" data-id="${s.id}" data-name="${s.name}" style="font-size:11px;background:#fffbe6;border:0.5px solid #ffe58f;color:#ad6800">🗑️ Reset Data</button>` : ''}
-                ${isAdmin ? `<button class="neu-btn neu-btn--small delete-btn" data-id="${s.id}" data-name="${s.name}" style="font-size:11px;background:#fff1f0;border:0.5px solid #ffccc7;color:var(--danger)">❌ Delete</button>` : ''}
+                ${canDestroy ? `<button class="neu-btn neu-btn--small reset-btn" data-id="${s.id}" data-name="${s.name}" style="font-size:11px;background:#fffbe6;border:0.5px solid #ffe58f;color:#ad6800">🗑️ Reset Data</button>` : ''}
+                ${canDestroy ? `<button class="neu-btn neu-btn--small delete-btn" data-id="${s.id}" data-name="${s.name}" style="font-size:11px;background:#fff1f0;border:0.5px solid #ffccc7;color:var(--danger)">❌ Delete</button>` : ''}
               </div>
             </div>
           </div>
@@ -129,9 +130,10 @@ export async function stationsView({ root }) {
               <div style="height:0.5px;background:var(--border);margin:4px 0"></div>
               <div class="grid grid-2" style="gap:8px">
                 <button id="viewTeam" class="neu-btn neu-btn--small" style="background:#f0f0ff;border:0.5px solid #d0d0ff;color:#4c1d95">👥 Team Directory</button>
-                ${isManagerOrAbove ? `<button id="modalReset" class="neu-btn neu-btn--small" style="background:#fffbe6;border:0.5px solid #ffe58f;color:#ad6800">🗑️ Reset Data</button>` : ''}
-                ${isAdmin ? `<button id="modalDelete" class="neu-btn neu-btn--small" style="background:#fff1f0;border:0.5px solid #ffccc7;color:var(--danger)">❌ Delete Station</button>` : ''}
+                ${canDestroy ? `<button id="modalReset" class="neu-btn neu-btn--small" style="background:#fffbe6;border:0.5px solid #ffe58f;color:#ad6800">🗑️ Reset Data</button>` : ''}
+                ${canDestroy ? `<button id="modalDelete" class="neu-btn neu-btn--small" style="background:#fff1f0;border:0.5px solid #ffccc7;color:var(--danger)">❌ Delete Station</button>` : ''}
               </div>
+              ${!canDestroy ? `<p style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px">🔒 Only Station Owner can reset/delete</p>` : ''}
             ` : ''}
           </div>
         </div>

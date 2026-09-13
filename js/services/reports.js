@@ -30,7 +30,7 @@ export async function getDailyReport(stationId, dateStr) {
   return { date: dateStr, shifts: dayShifts, totalLiters, totalRevenue, totalPayments, variance, byFuel, paymentsAgg };
 }
 
-export async function getAuditLogs(stationId, limit=50) {
-  const logs = await queryDocs('auditLogs', l => !stationId || l.stationId === stationId);
-  return logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit);
+// Audit log removed as per requirement
+export async function getAuditLogs() {
+  return [];
 }

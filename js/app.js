@@ -10,7 +10,7 @@ import { pumpsView } from './views/pumps.js';
 import { employeesView } from './views/employees.js';
 import { pricesView } from './views/prices.js';
 import { shiftsListView, startShiftView, shiftDetailView, closeShiftView } from './views/shifts.js';
-import { reportsView, auditView } from './views/reports.js';
+import { reportsView } from './views/reports.js';
 import { settingsView } from './views/settings.js';
 import { superAdminView } from './views/superAdmin.js';
 import { devSetupView } from './views/devSetup.js';
@@ -44,7 +44,6 @@ async function bootstrap() {
   registerRoute('/shifts/:id', shiftDetailView);
   registerRoute('/shifts/:id/close', closeShiftView);
   registerRoute('/reports', reportsView);
-  registerRoute('/reports/audit', auditView);
   registerRoute('/settings', settingsView);
   registerRoute('/super-admin', superAdminView);
   registerRoute('/invite', superAdminView);
