@@ -5,6 +5,8 @@ export async function getStationsForCurrentUser() {
   const { user } = getState();
   if (!user) return [];
   const all = await listDocs('stations');
+  // Cache for topbar
+  try { localStorage.setItem('fuelops_stations_cache', JSON.stringify(all.map(s=>({id:s.id,name:s.name})))); } catch {}
   if (user.role === 'super_admin') {
     return all; // super admin sees all
   }

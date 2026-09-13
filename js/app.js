@@ -76,10 +76,14 @@ function updateChrome(state) {
     logoutTop.style.display = 'inline-flex';
     refreshTop.style.display = 'inline-flex';
     stationBadge.style.display = 'inline-flex';
-    // station badge
+    // station badge - show name not ID
     const { currentStationId } = state;
     if (currentStationId) {
-      stationBadge.textContent = `📍 ${currentStationId.slice(0,6)}`;
+      // Try to get station name from cache or show short
+      const stations = JSON.parse(localStorage.getItem('fuelops_stations_cache') || '[]');
+      const st = stations.find(s=>s.id===currentStationId);
+      if (st) stationBadge.textContent = `📍 ${st.name.slice(0,12)}`;
+      else stationBadge.textContent = `📍 Station`;
     } else {
       stationBadge.textContent = 'No station';
     }
