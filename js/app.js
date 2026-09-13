@@ -5,6 +5,7 @@ import { initRouter, registerRoute, navigate } from './router.js';
 import { loginView } from './views/login.js';
 import { dashboardView } from './views/dashboard.js';
 import { stationsView } from './views/stations.js';
+import { teamDirectoryView } from './views/teamDirectory.js';
 import { pumpsView } from './views/pumps.js';
 import { employeesView } from './views/employees.js';
 import { pricesView } from './views/prices.js';
@@ -33,6 +34,8 @@ async function bootstrap() {
   registerRoute('/setup', devSetupView);
   registerRoute('/dashboard', dashboardView);
   registerRoute('/stations', stationsView);
+  registerRoute('/stations/:id/team', teamDirectoryView);
+  registerRoute('/team', teamDirectoryView);
   registerRoute('/pumps', pumpsView);
   registerRoute('/employees', employeesView);
   registerRoute('/prices', pricesView);

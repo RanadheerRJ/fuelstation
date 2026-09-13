@@ -43,7 +43,20 @@ export async function getStationById(id) { return await getDocById('stations', i
 
 export async function deleteStation(id) {
   const { user } = getState();
-  if (user?.role !== 'super_admin') throw new Error('Only Super Admin can delete stations');
+  // Super Admin can delete any, Owner/Admin can delete their own station
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isOwnerOrAdmin = ['owner','admin'].includes(user?.role);
+  
+  if (!isSuperAdmin && !isOwnerOrAdmin) throw new Error('Only Super Admin / Owner / Admin can delete stations');
+  
+  // For non-super-admin, check if station belongs to them
+  if (!isSuperAdmin) {
+    const all = await listDocs('stations');
+    const station = all.find(s => s.id === id);
+    if (!station) throw new Error('Station not found');
+    const isOwn = station.ownerId === user.uid || (user.stationIds||[]).includes(id);
+    if (!isOwn) throw new Error('You can only delete your own station');
+  }
   
   // First reset all operational data for this station
   await resetStationData(id);
@@ -65,12 +78,32 @@ export async function deleteStation(id) {
     await mod.deleteDoc(mod.doc(db, 'stations', id));
   }
   
-  await logAudit({ userId: user?.uid, stationId: id, action: 'STATION_DELETED', metadata: { stationId: id } });
+  await logAudit({ userId: user?.uid, stationId: id, action: 'STATION_DELETED', metadata: { stationId: id, by: user.role } });
   return true;
 }
 
 export async function resetStationData(stationId) {
   const { getDbInstance, loadFirestoreModule, getIsDemo } = await import('../firebase.js');
+  const { user } = getState();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isOwnerOrAdmin = ['owner','admin','manager'].includes(user?.role);
+  
+  // Allow super_admin, owner, admin, manager to reset their station
+  if (!isSuperAdmin && !isOwnerOrAdmin) throw new Error('Not allowed to reset');
+  
+  if (!isSuperAdmin && user) {
+    // Check if user has access to this station
+    const hasAccess = (user.stationIds||[]).includes(stationId);
+    if (!hasAccess && user.role !== 'owner') {
+      // For owner, also check if they own it via stations list
+      const allStations = await listDocs('stations');
+      const station = allStations.find(s => s.id === stationId);
+      if (station && station.ownerId !== user.uid) {
+        throw new Error('You can only reset your own station');
+      }
+    }
+  }
+  
   const isDemo = getIsDemo();
   
   if (isDemo) {
@@ -112,6 +145,5 @@ export async function resetStationData(stationId) {
     }
   }
   
-  const { user } = getState();
-  await logAudit({ userId: user?.uid, stationId, action: 'STATION_DATA_RESET', metadata: { stationId } });
+  await logAudit({ userId: user?.uid, stationId, action: 'STATION_DATA_RESET', metadata: { stationId, by: user?.role } });
 }

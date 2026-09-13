@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v15-superadmin-delete-reset-20260913';
+const CACHE_NAME = 'fuelops-v16-team-directory-admin-delete-20260913';
 const APP_SHELL = [
   './',
   './index.html',
@@ -25,6 +25,7 @@ const APP_SHELL = [
   './js/views/login.js',
   './js/views/dashboard.js',
   './js/views/stations.js',
+  './js/views/teamDirectory.js',
   './js/views/pumps.js',
   './js/views/employees.js',
   './js/views/prices.js',
