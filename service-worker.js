@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v24-attendant-own-admin-reopen-20260913';
+const CACHE_NAME = 'fuelops-v25-collections-settlement-reset-20260913';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const APP_SHELL = [
   './js/services/transactions.js',
   './js/services/notes.js',
   './js/services/reports.js',
+  './js/services/collections.js',
   './js/views/login.js',
   './js/views/dashboard.js',
   './js/views/stations.js',
@@ -30,6 +31,7 @@ const APP_SHELL = [
   './js/views/employees.js',
   './js/views/prices.js',
   './js/views/shifts.js',
+  './js/views/collections.js',
   './js/views/reports.js',
   './js/views/settings.js',
   './js/views/superAdmin.js',

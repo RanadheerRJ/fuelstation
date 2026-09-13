@@ -35,10 +35,26 @@ export async function settingsView({ root }) {
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/prices'">💰 Fuel Prices</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/shifts'">🧾 Shifts</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/shifts/start'">▶️ Start Shift</button>
+          <button class="neu-btn neu-btn--small" style="background:#f6ffed;border:1px solid #b7eb8f" onclick="location.hash='#/collections'">💰 Collections</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/reports'">📊 Reports</button>
           ${user.role==='super_admin' ? `<button class="neu-btn neu-btn--small" style="background:var(--primary-light);color:var(--primary)" onclick="location.hash='#/super-admin'">👑 Invite Owners</button>` : ''}
         </div>
       </div>
+
+      ${isOwner ? `
+      <div class="neu-card" style="margin-top:16px">
+        <h3 style="font-weight:700">💰 Owner Controls • Collections</h3>
+        <p style="font-size:11px;color:var(--text-secondary);margin-top:4px">Control your To Collect balance visibility and reset</p>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px">
+            <div><div style="font-weight:600;font-size:13px">🙈 Hide Balance</div><div style="font-size:11px;color:var(--text-secondary)">Hide ₹ amounts from dashboard if someone looks over shoulder</div></div>
+            <button id="toggleHideBalance" class="neu-btn" style="min-height:40px;padding:0 14px;border-radius:10px;font-weight:700">Toggle</button>
+          </div>
+          <button class="neu-btn" style="min-height:44px;border-radius:12px;font-weight:600" onclick="location.hash='#/collections'">💰 Go to Collections • Settle & Reset Dashboard</button>
+          <div style="padding:10px;background:#f6ffed;border-radius:10px;border:1px solid #b7eb8f"><div style="font-size:11px;font-weight:700;color:#389e0d">💡 Why To Collect keeps increasing?</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">Because approved shifts are not marked as collected. After you physically collect cash from staff, tap Collect in Collections page. Then balance goes to 0 but history remains.</div></div>
+        </div>
+      </div>
+      ` : ''}
 
       ${canDestroy ? `
       <div class="neu-card" style="margin-top:16px;border:0.5px solid #ffccc7">
@@ -100,6 +116,15 @@ export async function settingsView({ root }) {
   root.querySelector('#logoutBtn').addEventListener('click', async ()=>{
     await logout();
     location.hash = '#/login';
+  });
+
+  root.querySelector('#toggleHideBalance')?.addEventListener('click', ()=>{
+    if (!currentStation) return alert('No station');
+    const key = `fuelops_hide_balance_${currentStation.id}`;
+    const cur = localStorage.getItem(key) === '1';
+    localStorage.setItem(key, cur ? '0' : '1');
+    alert(cur ? '👁️ Balance shown — refresh dashboard' : '🙈 Balance hidden from dashboard — tap eye icon to show');
+    settingsView({ root });
   });
 
   root.querySelector('#refreshBtn')?.addEventListener('click', ()=> location.reload());

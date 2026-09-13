@@ -100,6 +100,14 @@ service cloud.firestore {
       allow update, delete: if isSignedIn();
     }
 
+    // Settlements / Collections - Owner can manage collections, read all signed in
+    match /settlements/{setId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isManagerOrAbove();
+      allow update: if isSignedIn() && isManagerOrAbove();
+      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+    }
+
     // Audit Logs - REMOVED as per requirement - no read/write
     match /auditLogs/{logId} {
       allow read, write: if false;
