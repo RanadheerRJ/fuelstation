@@ -1,7 +1,7 @@
-import { getState, clearDemoData } from '../state.js';
+import { getState, setState, clearDemoData } from '../state.js';
 import { logout } from '../auth.js';
 import { getFirebaseStatus } from '../firebase.js';
-import { getStationsForCurrentUser } from '../services/stations.js';
+import { getStationsForCurrentUser, resetStationData as resetStationDataService, deleteStation } from '../services/stations.js';
 
 export async function settingsView({ root }) {
   const { user, currentStationId } = getState();
@@ -39,25 +39,34 @@ export async function settingsView({ root }) {
       </div>
 
       <div class="neu-card" style="margin-top:16px">
-        <h3 style="font-weight:700">Danger Zone</h3>
-        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">Reset will permanently delete station operational data. Cannot be undone.</p>
+        <h3 style="font-weight:700">Danger Zone ${user.role==='super_admin' ? '• Super Admin' : ''}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">Reset deletes operational data. Delete removes station itself. Cannot be undone. Super Admin powers enabled.</p>
         
         <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px">
           ${currentStation ? `
             <div style="padding:12px;background:var(--bg);border-radius:10px;border:0.5px solid var(--border)">
               <div style="font-weight:600;font-size:13px">Current Station: ${currentStation.name}</div>
-              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Will delete: pumps, nozzles, prices, shifts, credits, expenses, notes for this station</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">ID: ${currentStation.id.slice(0,8)} • ${currentStation.address||''}</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">Reset deletes: pumps, nozzles, prices, shifts, credits, expenses, notes (keeps station)</div>
             </div>
-            <button id="resetStationBtn" class="neu-btn neu-btn--small" style="background:#fff1f0;color:var(--danger);border:0.5px solid #ffccc7">🗑️ Reset Current Station Data</button>
-          ` : `<p style="font-size:12px;color:var(--text-secondary)">No station selected</p>`}
+            <button id="resetStationBtn" class="neu-btn neu-btn--small" style="background:#fffbe6;border:0.5px solid #ffe58f;color:#ad6800">🗑️ Reset Current Station Data</button>
+            ${user.role==='super_admin' ? `
+              <button id="deleteStationBtn" class="neu-btn neu-btn--small" style="background:#fff1f0;color:var(--danger);border:0.5px solid #ffccc7">❌ Delete Current Station (Super Admin)</button>
+              <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Delete removes station + all its data permanently</p>
+            ` : ''}
+          ` : `<p style="font-size:12px;color:var(--text-secondary)">No station selected — go to Stations and Select one</p>`}
           
           ${user.role==='super_admin' ? `
             <div style="height:0.5px;background:var(--border);margin:8px 0"></div>
-            <button id="resetAllBtn" class="neu-btn neu-btn--small" style="background:var(--danger);color:white;border:none">⚠️ Reset ALL Stations & Data (Super Admin)</button>
-            <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Deletes ALL stations, pumps, nozzles, prices, shifts, transactions, notes, audit logs (keeps users)</p>
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Super Admin — All Stations</div>
+            <button id="resetAllBtn" class="neu-btn neu-btn--small" style="background:var(--danger);color:white;border:none">⚠️ Reset ALL Stations Data (Keep Stations)</button>
+            <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Deletes pumps, nozzles, prices, shifts, transactions, notes for ALL stations (keeps stations & users)</p>
             
+            <button id="deleteAllStationsBtn" class="neu-btn neu-btn--small" style="background:#ff4d4f;color:white;border:none">🗑️ Delete ALL Stations (Super Admin)</button>
+            <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Deletes ALL stations + all operational data (keeps users)</p>
+
             <button id="resetEverythingBtn" class="neu-btn neu-btn--small" style="background:#1d1d1f;color:white;border:none">💥 Reset Everything (Wipe DB)</button>
-            <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Deletes EVERYTHING including users. You will need to create Super Admin again via #/dev-setup</p>
+            <p style="font-size:10px;color:var(--text-tertiary);text-align:center">Deletes EVERYTHING including users. Need to create Super Admin via #/dev-setup again</p>
           ` : ''}
         </div>
       </div>
@@ -68,7 +77,7 @@ export async function settingsView({ root }) {
           <button id="refreshBtn" class="neu-btn neu-btn--small">↻ Refresh Data</button>
           <button id="clearCacheBtn" class="neu-btn neu-btn--small">🧹 Clear Cache & Reload</button>
           <div style="display:flex;gap:8px;align-items:center;padding:8px;background:var(--bg);border-radius:8px">
-            <span style="font-size:11px;color:var(--text-secondary)">Floating ↻ button is draggable — drag to adjust its position. Position saved automatically.</span>
+            <span style="font-size:11px;color:var(--text-secondary)">Floating ↻ button is draggable — drag to adjust position. Saved automatically.</span>
           </div>
         </div>
       </div>
@@ -77,9 +86,9 @@ export async function settingsView({ root }) {
         <h3 style="font-weight:700">App Info</h3>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;line-height:1.5">
           <p>FuelOps • iOS Clean • Simple • Invite Only</p>
-          <p style="margin-top:4px">Mode: <b>${isDemo ? 'Local Storage (Demo)' : 'Firebase Firestore Live'}</b></p>
-          <p style="margin-top:4px">Station: ${currentStation?.name || 'None'} • Role: ${user?.role}</p>
-          <p style="margin-top:4px">Build: v13 • 10-digit phone + PIN, no country code</p>
+          <p>Mode: <b>${isDemo ? 'Local Storage (Demo)' : 'Firebase Firestore Live'}</b></p>
+          <p>Station: ${currentStation?.name || 'None'} • Role: ${user?.role}</p>
+          <p>Build: v15 • Super Admin delete + reset</p>
         </div>
       </div>
 
@@ -99,7 +108,7 @@ export async function settingsView({ root }) {
   });
 
   root.querySelector('#clearCacheBtn')?.addEventListener('click', async ()=>{
-    if (confirm('Clear cache and reload? This will clear service worker cache.')) {
+    if (confirm('Clear cache and reload?')) {
       if ('caches' in window) {
         const keys = await caches.keys();
         await Promise.all(keys.map(k=>caches.delete(k)));
@@ -111,40 +120,98 @@ export async function settingsView({ root }) {
 
   root.querySelector('#resetStationBtn')?.addEventListener('click', async ()=>{
     if (!currentStation) return alert('No station selected');
-    const confirm1 = confirm(`Reset ALL data for station "${currentStation.name}"?\n\nThis will delete:\n- Pumps\n- Nozzles\n- Prices\n- Shifts\n- Credits & Expenses\n- Notes\n\nCannot be undone!`);
-    if (!confirm1) return;
-    const confirm2 = prompt(`Type station name "${currentStation.name}" to confirm:`);
-    if (confirm2 !== currentStation.name) return alert('Station name did not match, cancelled.');
-
+    if (!confirm(`Reset ALL data for "${currentStation.name}"?\n\nDeletes: pumps, nozzles, prices, shifts, credits, expenses, notes\nKeeps: station itself\nCannot be undone!`)) return;
+    const typed = prompt(`Type station name "${currentStation.name}" to confirm:`);
+    if (typed !== currentStation.name) return alert('Mismatch, cancelled');
+    
+    const btn = root.querySelector('#resetStationBtn');
+    btn.disabled = true;
+    btn.textContent = 'Resetting...';
     try {
-      await resetStationData(currentStation.id, isDemo);
+      await resetStationDataService(currentStation.id);
       alert(`✅ Station "${currentStation.name}" data reset!`);
       location.reload();
     } catch(e){
       alert('Reset failed: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '🗑️ Reset Current Station Data';
+    }
+  });
+
+  root.querySelector('#deleteStationBtn')?.addEventListener('click', async ()=>{
+    if (!currentStation) return alert('No station selected');
+    if (user.role !== 'super_admin') return alert('Only Super Admin');
+    if (!confirm(`⚠️ DELETE station "${currentStation.name}" permanently?\n\nDeletes:\n• Station itself\n• ALL pumps & nozzles\n• ALL prices\n• ALL shifts & transactions\n• ALL notes & logs\n\nCannot be undone!`)) return;
+    const typed = prompt(`Type "DELETE ${currentStation.name}" to confirm:`);
+    if (typed !== `DELETE ${currentStation.name}`) return alert('Mismatch, cancelled');
+    
+    const btn = root.querySelector('#deleteStationBtn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      await deleteStation(currentStation.id);
+      setState({ currentStationId: null });
+      alert(`✅ Station "${currentStation.name}" deleted!`);
+      location.hash = '#/stations';
+      setTimeout(()=> location.reload(), 300);
+    } catch(e){
+      alert('Delete failed: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '❌ Delete Current Station (Super Admin)';
     }
   });
 
   root.querySelector('#resetAllBtn')?.addEventListener('click', async ()=>{
-    const confirm1 = confirm(`⚠️ SUPER ADMIN: Reset ALL stations and operational data?\n\nDeletes:\n- All stations\n- All pumps & nozzles\n- All prices\n- All shifts\n- All transactions\n- All notes & audit logs\n\nKeeps: Users (so you stay super_admin)\n\nCannot be undone!`);
-    if (!confirm1) return;
-    const confirm2 = prompt(`Type "RESET ALL" to confirm:`);
-    if (confirm2 !== 'RESET ALL') return alert('Cancelled');
+    if (user.role !== 'super_admin') return alert('Only Super Admin');
+    if (!confirm(`⚠️ Reset ALL operational data for ALL stations?\n\nDeletes for ALL:\n- Pumps & nozzles\n- Prices\n- Shifts & transactions\n- Notes & logs\n\nKeeps: Stations + Users\nCannot be undone!`)) return;
+    const typed = prompt(`Type "RESET ALL" to confirm:`);
+    if (typed !== 'RESET ALL') return alert('Cancelled');
 
+    const btn = root.querySelector('#resetAllBtn');
+    btn.disabled = true;
+    btn.textContent = 'Resetting all...';
     try {
-      await resetAllStationsData(isDemo);
-      alert('✅ All stations data reset! Users kept.');
+      for (const st of stations) {
+        await resetStationDataService(st.id);
+      }
+      alert('✅ All stations operational data reset!');
       location.reload();
     } catch(e){
-      alert('Reset failed: ' + e.message);
+      alert('Failed: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '⚠️ Reset ALL Stations Data (Keep Stations)';
+    }
+  });
+
+  root.querySelector('#deleteAllStationsBtn')?.addEventListener('click', async ()=>{
+    if (user.role !== 'super_admin') return alert('Only Super Admin');
+    if (!confirm(`🗑️ DELETE ALL STATIONS permanently?\n\nDeletes:\n- ALL stations\n- ALL pumps & nozzles\n- ALL prices\n- ALL shifts & transactions\n- ALL notes & logs\n\nKeeps: Users\nCannot be undone!`)) return;
+    const typed = prompt(`Type "DELETE ALL STATIONS" to confirm:`);
+    if (typed !== 'DELETE ALL STATIONS') return alert('Cancelled');
+
+    const btn = root.querySelector('#deleteAllStationsBtn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting all...';
+    try {
+      for (const st of stations) {
+        await deleteStation(st.id);
+      }
+      setState({ currentStationId: null });
+      alert('✅ All stations deleted!');
+      location.hash = '#/stations';
+      setTimeout(()=> location.reload(), 300);
+    } catch(e){
+      alert('Failed: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '🗑️ Delete ALL Stations (Super Admin)';
     }
   });
 
   root.querySelector('#resetEverythingBtn')?.addEventListener('click', async ()=>{
-    const confirm1 = confirm(`💥 SUPER ADMIN: WIPE EVERYTHING?\n\nDeletes EVERYTHING:\n- All stations\n- All pumps/nozzles/prices\n- All shifts/transactions\n- All users (including you)\n- All notes/audit logs\n\nYou will need to create Super Admin again via #/dev-setup with key FUELDEV2024\n\nCannot be undone!`);
-    if (!confirm1) return;
-    const confirm2 = prompt(`Type "WIPE EVERYTHING" to confirm:`);
-    if (confirm2 !== 'WIPE EVERYTHING') return alert('Cancelled');
+    if (user.role !== 'super_admin') return alert('Only Super Admin');
+    if (!confirm(`💥 WIPE EVERYTHING?\n\nDeletes:\n- All stations\n- All pumps/nozzles/prices\n- All shifts/transactions\n- All users (including you)\n- All notes/audit logs\n\nNeed to create Super Admin again via #/dev-setup with FUELDEV2024\nCannot be undone!`)) return;
+    const typed = prompt(`Type "WIPE EVERYTHING" to confirm:`);
+    if (typed !== 'WIPE EVERYTHING') return alert('Cancelled');
 
     try {
       await resetEverything(isDemo);
@@ -158,82 +225,6 @@ export async function settingsView({ root }) {
       alert('Wipe failed: ' + e.message);
     }
   });
-}
-
-async function resetStationData(stationId, isDemo) {
-  if (isDemo) {
-    const { getDemoData, setDemoData } = await import('../state.js');
-    let data = getDemoData();
-    if (!data) return;
-    
-    // Delete all collections for this station
-    data.pumps = (data.pumps||[]).filter(p => p.stationId !== stationId);
-    data.nozzles = (data.nozzles||[]).filter(n => n.stationId !== stationId);
-    data.prices = (data.prices||[]).filter(p => p.stationId !== stationId);
-    data.shifts = (data.shifts||[]).filter(s => s.stationId !== stationId);
-    data.transactions = (data.transactions||[]).filter(t => t.stationId !== stationId);
-    data.notes = (data.notes||[]).filter(n => n.stationId !== stationId);
-    data.auditLogs = (data.auditLogs||[]).filter(a => a.stationId !== stationId);
-    data.assignments = (data.assignments||[]).filter(a => a.stationId !== stationId);
-    
-    setDemoData(data);
-    console.log('[Reset] Station data cleared for:', stationId);
-  } else {
-    // Firebase real - delete Firestore docs
-    const { getDbInstance, loadFirestoreModule } = await import('../firebase.js');
-    const { queryDocs } = await import('../services/firestoreService.js');
-    const mod = await loadFirestoreModule();
-    const db = getDbInstance();
-    
-    const collections = ['pumps','nozzles','prices','shifts','transactions','notes','auditLogs','assignments'];
-    
-    for (const coll of collections) {
-      const docs = await queryDocs(coll, d => d.stationId === stationId);
-      console.log(`[Reset] Deleting ${docs.length} docs from ${coll}`);
-      for (const doc of docs) {
-        try {
-          await mod.deleteDoc(mod.doc(db, coll, doc.id));
-        } catch(e){ console.warn(`Failed to delete ${coll}/${doc.id}`, e); }
-      }
-    }
-  }
-}
-
-async function resetAllStationsData(isDemo) {
-  if (isDemo) {
-    const { getDemoData, setDemoData } = await import('../state.js');
-    let data = getDemoData();
-    if (!data) return;
-    
-    data.stations = [];
-    data.pumps = [];
-    data.nozzles = [];
-    data.prices = [];
-    data.shifts = [];
-    data.transactions = [];
-    data.notes = [];
-    data.auditLogs = [];
-    data.assignments = [];
-    
-    setDemoData(data);
-  } else {
-    const { getDbInstance, loadFirestoreModule } = await import('../firebase.js');
-    const { listDocs } = await import('../services/firestoreService.js');
-    const mod = await loadFirestoreModule();
-    const db = getDbInstance();
-    
-    const collections = ['stations','pumps','nozzles','prices','shifts','transactions','notes','auditLogs','assignments'];
-    
-    for (const coll of collections) {
-      const docs = await listDocs(coll);
-      console.log(`[Reset All] Deleting ${docs.length} from ${coll}`);
-      for (const doc of docs) {
-        try {
-          await mod.deleteDoc(mod.doc(db, coll, doc.id));
-        } catch(e){ console.warn(`Failed ${coll}/${doc.id}`, e); }
-      }
-    }
-  }
 }
 
 async function resetEverything(isDemo) {
@@ -259,8 +250,5 @@ async function resetEverything(isDemo) {
         } catch(e){ console.warn(`Failed ${coll}`, e); }
       }
     }
-    
-    // Also delete Auth users? Can't delete other auth users from client, only own. So we keep auth but firestore users wiped.
-    // For full wipe, super admin will need to manually delete auth users in console, or we clear local state
   }
 }
