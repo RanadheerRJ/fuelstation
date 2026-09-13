@@ -90,3 +90,13 @@ export function demoHasUsers() {
   const data = ensureDemo();
   return (data.users || []).length > 0;
 }
+
+export function demoHasSuperAdmin() {
+  const data = ensureDemo();
+  return (data.users || []).some(u => u.role === 'super_admin');
+}
+
+export function demoGetSuperAdmin() {
+  const data = ensureDemo();
+  return (data.users || []).find(u => u.role === 'super_admin') || null;
+}

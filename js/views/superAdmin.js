@@ -1,7 +1,7 @@
 import { getState } from '../state.js';
 import { getAllStations, createStation } from '../services/stations.js';
 import { getEmployees } from '../services/users.js';
-import { registerUserInFirebase } from '../auth.js';
+import { registerUserInFirebase, normalizePhone } from '../auth.js';
 import { formatDateTime } from '../services/calc.js';
 
 export async function superAdminView({ root }) {
@@ -49,8 +49,8 @@ export async function superAdminView({ root }) {
             <h4>👤 Owner Details</h4>
             <div class="grid" style="gap:14px">
               <div><label class="label">Owner Name *</label><input id="o_name" class="neu-input" placeholder="Ramesh Kumar"></div>
-              <div><label class="label">Phone *</label><input id="o_phone" class="neu-input" type="tel" placeholder="+91 98765 43210"></div>
-              <div><label class="label">PIN *</label><input id="o_pin" class="neu-input" type="tel" maxlength="4" placeholder="1234"></div>
+              <div><label class="label">Phone (10 digits) *</label><input id="o_phone" class="neu-input" type="tel" inputmode="numeric" maxlength="10" placeholder="9948288169"></div>
+              <div><label class="label">PIN *</label><input id="o_pin" class="neu-input" type="tel" inputmode="numeric" maxlength="4" placeholder="1234"></div>
             </div>
           </div>
 
@@ -105,14 +105,14 @@ export async function superAdminView({ root }) {
 
   root.querySelector('#inviteBtn').addEventListener('click', async ()=>{
     const o_name = root.querySelector('#o_name').value.trim();
-    const o_phone = root.querySelector('#o_phone').value.trim();
+    const o_phoneRaw = root.querySelector('#o_phone').value.trim();
     const o_pin = root.querySelector('#o_pin').value.trim();
     const s_name = root.querySelector('#s_name').value.trim();
     const s_address = root.querySelector('#s_address').value.trim();
-    const s_phone = root.querySelector('#s_phone').value.trim();
+    const s_phoneRaw = root.querySelector('#s_phone').value.trim();
     const alertEl = root.querySelector('#inviteAlert');
 
-    if (!o_name || !o_phone || !o_pin || !s_name) {
+    if (!o_name || !o_phoneRaw || !o_pin || !s_name) {
       alertEl.innerHTML = `<div class="alert alert--danger">Fill required fields</div>`;
       return;
     }
@@ -120,6 +120,8 @@ export async function superAdminView({ root }) {
       alertEl.innerHTML = `<div class="alert alert--danger">PIN must be 4 digits</div>`;
       return;
     }
+    const o_phone = normalizePhone(o_phoneRaw);
+    const s_phone = s_phoneRaw ? normalizePhone(s_phoneRaw) : '';
 
     const btn = root.querySelector('#inviteBtn');
     btn.disabled = true;

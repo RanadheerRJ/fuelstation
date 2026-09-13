@@ -50,8 +50,8 @@ export function clearState() {
   listeners.forEach(fn => fn(state));
 }
 
-// Demo data persistence - PROD FINAL - invite only - super_admin bootstrap
-const DEMO_KEY = 'fuelops_demo_v6_invite_only';
+// Demo data persistence - v7 - 10 digit phone, single super_admin
+const DEMO_KEY = 'fuelops_demo_v7_10digit_single_superadmin';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);

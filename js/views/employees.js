@@ -1,7 +1,7 @@
 import { getState } from '../state.js';
 import { getEmployees, createEmployee, updateEmployee } from '../services/users.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
-import { registerUserInFirebase } from '../auth.js';
+import { registerUserInFirebase, normalizePhone } from '../auth.js';
 
 export async function employeesView({ root }) {
   const { user, currentStationId } = getState();
@@ -51,8 +51,8 @@ export async function employeesView({ root }) {
         <div style="display:flex;justify-content:space-between"><h3 style="font-weight:800">${existing?'Edit Employee':'New Employee'}</h3><button id="closeM" class="neu-btn neu-btn--small">✕</button></div>
         <div class="grid" style="margin-top:14px">
           <div><label class="label">Name</label><input id="e_name" class="neu-input" value="${existing?.name||''}" placeholder="Rahul"></div>
-          <div><label class="label">Phone</label><input id="e_phone" class="neu-input" value="${existing?.phone||''}" placeholder="+91..."></div>
-          ${!existing ? `<div><label class="label">4-digit PIN</label><input id="e_pin" class="neu-input" maxlength="4" placeholder="1234"></div>` : ''}
+          <div><label class="label">Phone (10 digits)</label><input id="e_phone" class="neu-input" value="${existing?.phone? existing.phone.replace(/\D/g,'').slice(-10):''}" placeholder="9948288169" inputmode="numeric" maxlength="10"></div>
+          ${!existing ? `<div><label class="label">4-digit PIN</label><input id="e_pin" class="neu-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>` : ''}
           <div><label class="label">Role</label><select id="e_role" class="neu-select">
             <option value="attendant" ${existing?.role==='attendant'?'selected':''}>Attendant</option>
             <option value="manager" ${existing?.role==='manager'?'selected':''}>Manager</option>
@@ -68,11 +68,12 @@ export async function employeesView({ root }) {
     modalRoot.querySelector('#closeM').addEventListener('click', ()=> modalRoot.innerHTML='');
     modalRoot.querySelector('#saveEmp').addEventListener('click', async ()=>{
       const name = modalRoot.querySelector('#e_name').value.trim();
-      const phone = modalRoot.querySelector('#e_phone').value.trim();
+      const phoneRaw = modalRoot.querySelector('#e_phone').value.trim();
       const role = modalRoot.querySelector('#e_role').value;
       const pin = modalRoot.querySelector('#e_pin')?.value.trim();
       const stationIds = Array.from(modalRoot.querySelectorAll('.station-check:checked')).map(c=>c.value);
-      if (!name || !phone) return alert('Name and phone required');
+      if (!name || !phoneRaw) return alert('Name and phone required');
+      const phone = normalizePhone(phoneRaw);
       if (!existing && (!pin || pin.length!==4)) return alert('4-digit PIN required');
       try {
         if (existing) {
