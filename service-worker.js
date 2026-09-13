@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v21-correction-point-20260913';
+const CACHE_NAME = 'fuelops-v22-clean-buttons-quick-exp-20260913';
 const APP_SHELL = [
   './',
   './index.html',
