@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - invite only - super admin
-const CACHE_NAME = 'fuelops-v10-10digit-single-superadmin-20260913';
+const CACHE_NAME = 'fuelops-v11-simple-10digit-dev-user-20260913';
 const APP_SHELL = [
   './',
   './index.html',

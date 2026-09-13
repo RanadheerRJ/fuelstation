@@ -51,7 +51,7 @@ export function clearState() {
 }
 
 // Demo data persistence - v7 - 10 digit phone, single super_admin
-const DEMO_KEY = 'fuelops_demo_v7_10digit_single_superadmin';
+const DEMO_KEY = 'fuelops_demo_v8_simple_10digit_dev_user';
 export function getDemoData() {
   try {
     const raw = localStorage.getItem(DEMO_KEY);
