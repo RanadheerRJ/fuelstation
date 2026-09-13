@@ -26,20 +26,35 @@ export async function shiftsListView({ root }) {
     </div>
   `;
   function renderShiftList(list) {
+    const { user } = getState();
+    const isOwner = user.role === 'owner';
     if (!list.length) return `<div class="neu-card empty" style="padding:24px;text-align:center"><p>No shifts</p></div>`;
-    return list.map(sh=>`
+    return list.map(sh=>{
+      const v = sh.totals?.variance||0;
+      const absV = Math.abs(v);
+      let varText = '';
+      if (absV>0.5) {
+        if (v<0) {
+          if (sh.userId===user.uid) varText = `💸 To Handover ${formatCurrency(absV)}`;
+          else varText = `💰 To Collect ${formatCurrency(absV)} from ${sh.employeeName.split(' ')[0]}`;
+        } else {
+          if (sh.userId===user.uid) varText = `💰 Excess ${formatCurrency(absV)}`;
+          else varText = `↩️ Excess ${formatCurrency(absV)} to ${sh.employeeName.split(' ')[0]}`;
+        }
+      }
+      return `
       <div class="neu-card" style="cursor:pointer;padding:16px;border-radius:14px" onclick="location.hash='#/shifts/${sh.id}'">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sh.employeeName} • ${new Date(sh.startTime).toLocaleDateString()} ${new Date(sh.startTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} → ${sh.endTime? new Date(sh.endTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'Active'}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">${sh.nozzles?.length||0} nozzles • ${formatCurrency(sh.totals?.totalRevenue||0)} • ${formatLiters(sh.totals?.totalLiters||0)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">${sh.nozzles?.length||0} nozzles • ${isOwner || sh.userId===user.uid ? formatCurrency(sh.totals?.totalRevenue||0)+' • ' : ''}${formatLiters(sh.totals?.totalLiters||0)}</div>
             ${sh.correctionRequests?.length ? `<div style="font-size:11px;color:#fa541c;margin-top:6px;display:flex;align-items:center;gap:4px"><span style="background:#fff1f0;color:#cf1322;padding:2px 8px;border-radius:10px;font-size:10px">⚠️ ${sh.correctionRequests.length} correction</span></div>` : ''}
-            ${sh.totals?.variance ? `<div style="font-size:11px;margin-top:6px;color:${Math.abs(sh.totals.variance)>0.5?'var(--danger)':'var(--text-secondary)'}">Variance ${formatCurrency(sh.totals.variance)}</div>` : ''}
+            ${varText ? `<div style="font-size:11px;margin-top:6px;color:${Math.abs(v)>0.5 && v<0?'#cf1322':'#389e0d'};font-weight:600">${varText}</div>` : ''}
           </div>
           <span class="badge ${sh.status==='ACTIVE'?'badge--info': sh.status==='PENDING_REVIEW'?'badge--warning': sh.status==='APPROVED'?'badge--success':'badge--danger'}" style="font-size:11px;padding:6px 10px;border-radius:20px;white-space:nowrap">${sh.status}</span>
         </div>
       </div>
-    `).join('');
+    `}).join('');
   }
   root.querySelectorAll('.filter-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -227,7 +242,27 @@ export async function shiftDetailView({ root, params }) {
                 <div style="height:1px;background:#e0e0e0;margin:10px 0"></div>
                 <div style="display:flex;justify-content:space-between;font-size:14px"><span style="color:var(--text-secondary)">Recorded</span><span style="font-weight:600">${formatCurrency(t.totalPayments||0)}</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px"><span style="color:var(--text-secondary)">Expected</span><span style="font-weight:600">${formatCurrency(t.totalRevenue||0)}</span></div>
-                <div style="display:flex;justify-content:space-between;padding:12px;background:${isShort?'#fff1f0': isExcess?'#f6ffed':'#f0f0f0'};border-radius:10px;margin-top:12px;border:1px solid ${isShort?'#ffa39e': isExcess?'#b7eb8f':'#e0e0e0'}"><span style="font-weight:700;font-size:14px;color:${isShort?'#cf1322': isExcess?'#389e0d':'var(--text)'}">${isShort?'Short': isExcess?'Excess':'Variance'}</span><span style="font-weight:800;font-size:15px;color:${isShort?'#cf1322': isExcess?'#389e0d':'var(--text)'}">${formatCurrency(t.variance||0)}</span></div>
+                ${(() => {
+                  const v = t.variance||0;
+                  const absV = Math.abs(v);
+                  let label, desc, bg, border, color;
+                  if (absV < 0.5) {
+                    label = '✅ Balanced'; desc = 'All settled'; bg = '#f0f0f0'; border = '#e0e0e0'; color = 'var(--text)';
+                  } else if (v < 0) {
+                    if (isOwnerOfShift) {
+                      label = '💸 To Handover to Owner'; desc = `You need to give ${formatCurrency(absV)} to owner • Owner will collect after approval`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                    } else {
+                      label = `💰 To Collect from ${shift.employeeName}`; desc = `Collect ${formatCurrency(absV)} from ${shift.employeeName} after approval`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                    }
+                  } else {
+                    if (isOwnerOfShift) {
+                      label = '💰 Excess with You'; desc = `You collected ${formatCurrency(absV)} extra • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                    } else {
+                      label = `↩️ Excess to Return to ${shift.employeeName}`; desc = `Return ${formatCurrency(absV)} to ${shift.employeeName}`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                    }
+                  }
+                  return `<div style="padding:12px;background:${bg};border-radius:10px;margin-top:12px;border:1px solid ${border}"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:13px;color:${color}">${label}</span><span style="font-weight:800;font-size:15px;color:${color}">${formatCurrency(absV)}</span></div><div style="font-size:10px;color:var(--text-secondary);margin-top:4px">${desc}</div></div>`;
+                })()}
               </div>
             </div>
             ${credits.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Credits • ${formatCurrency(totalCredits)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="credit" data-field="credits" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${c.customer}</span><span style="font-weight:600">${formatCurrency(c.amount)}</span></div>`).join('')}</div>` : ''}
@@ -434,12 +469,25 @@ export async function closeShiftView({ root, params }) {
     const totalPayments = cash+card+upi+credit+other;
     const variance = totalPayments - totalRevenue;
     const quickTotal = quickExpenses.reduce((a,e)=>a+Number(e.amount||0),0);
+    const netVariance = variance - quickTotal;
+    const absNet = Math.abs(netVariance);
+    let varLabel, varDesc, varBg, varBorder, varColor;
+    if (absNet < 0.5) {
+      varLabel = '✅ Balanced'; varDesc = 'All settled'; varBg = '#f0f0f0'; varBorder = '#e0e0e0'; varColor = 'var(--text)';
+    } else if (netVariance < 0) {
+      varLabel = '💸 To Handover to Owner'; varDesc = `You need to give ${formatCurrency(absNet)} to owner • Owner will collect after approval`; varBg = '#fff1f0'; varBorder = '#ffa39e'; varColor = '#cf1322';
+    } else {
+      varLabel = '💰 Excess with You'; varDesc = `You collected ${formatCurrency(absNet)} extra`; varBg = '#f6ffed'; varBorder = '#b7eb8f'; varColor = '#389e0d';
+    }
     root.querySelector('#paymentSummary').innerHTML = `
       <div style="background:#f8f9fa;border-radius:12px;padding:14px;font-size:14px">
         <div style="display:flex;justify-content:space-between"><span>Expected Revenue</span><span style="font-weight:700">${formatCurrency(totalRevenue)}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:6px"><span>Recorded Payments</span><span style="font-weight:700">${formatCurrency(totalPayments)}</span></div>
         ${quickTotal>0 ? `<div style="display:flex;justify-content:space-between;margin-top:6px;color:#fa541c"><span>Quick Expenses</span><span style="font-weight:700">-${formatCurrency(quickTotal)}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;font-weight:800;margin-top:10px;padding-top:10px;border-top:1px solid #e0e0e0;color:${Math.abs(variance)>0.5? variance<0?'#cf1322':'#389e0d':'inherit'}"><span>Variance</span><span>${formatCurrency(variance - quickTotal)}</span></div>
+        <div style="padding:12px;background:${varBg};border-radius:10px;margin-top:12px;border:1px solid ${varBorder}">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:13px;color:${varColor}">${varLabel}</span><span style="font-weight:800;font-size:15px;color:${varColor}">${formatCurrency(absNet)}</span></div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${varDesc}</div>
+        </div>
       </div>
     `;
   }
