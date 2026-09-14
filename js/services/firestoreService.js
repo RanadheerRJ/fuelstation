@@ -156,3 +156,106 @@ export async function logAudit(entry = {}) {
     console.warn('[FuelOps] audit log write failed', entry?.action, e);
   }
 }
+
+// ============================================================================
+// Atomic primitives (Step 10)
+// ============================================================================
+
+/**
+ * Run fn inside a Firestore transaction. In demo mode the callback is executed
+ * directly against the local store (single-threaded, so effectively atomic).
+ *
+ * fn receives a tx-like helper: { get(coll,id), set(coll,id,data), update(coll,id,patch), delete(coll,id) }
+ */
+// Serializes demo-mode transactions. The local store is synchronous, but an
+// `await` inside a transaction body yields the event loop, which would let two
+// concurrent callers interleave their read/write and both "win" a lock. Real
+// Firestore gives us atomicity via runTransaction; in demo we emulate it with a
+// promise-chain mutex so both code paths behave identically.
+let demoTxChain = Promise.resolve();
+
+export async function runInTransaction(fn) {
+  if (getIsDemo()) {
+    const run = demoTxChain.then(() => demoRunTx(fn), () => demoRunTx(fn));
+    // Keep the chain alive even if this transaction rejects.
+    demoTxChain = run.then(() => undefined, () => undefined);
+    return await run;
+  }
+  return await firestoreRunTx(fn);
+}
+
+async function demoRunTx(fn) {
+  {
+    const helper = {
+      get: async (coll, id) => demo.demoGetById(coll, id),
+      set: async (coll, id, data) => demo.demoSet ? demo.demoSet(coll, id, data) : demo.demoAdd(coll, { ...data, id }),
+      update: async (coll, id, patch) => demo.demoUpdate(coll, id, patch),
+      delete: async (coll, id) => demo.demoDelete(coll, id),
+    };
+    return await fn(helper);
+  }
+}
+
+async function firestoreRunTx(fn) {
+  const mod = await loadFirestoreModule();
+  const db = getDbInstance();
+  return await mod.runTransaction(db, async (tx) => {
+    const helper = {
+      get: async (coll, id) => {
+        const snap = await tx.get(mod.doc(db, coll, id));
+        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+      },
+      set: async (coll, id, data) => { tx.set(mod.doc(db, coll, id), data); return { id, ...data }; },
+      update: async (coll, id, patch) => { tx.update(mod.doc(db, coll, id), patch); return { id, ...patch }; },
+      delete: async (coll, id) => { tx.delete(mod.doc(db, coll, id)); return true; },
+    };
+    return await fn(helper);
+  });
+}
+
+/**
+ * Claim a nozzle for a shift, atomically.
+ *
+ * Why a lock document: the old code did "query for active shifts, check none
+ * uses this nozzle, then write". Two attendants tapping Start at the same
+ * moment both read an empty result and both succeed — the same nozzle ends up
+ * in two active shifts and its litres are counted twice. Firestore client
+ * transactions cannot run queries, so the mutual-exclusion point is a document
+ * whose ID is the nozzle ID: creating it is the atomic compare-and-set.
+ *
+ * @throws if the nozzle is already held by another shift.
+ */
+export async function acquireNozzleLock(nozzleId, { shiftId, stationId, userId, employeeName }) {
+  return await runInTransaction(async (tx) => {
+    const existing = await tx.get('nozzleLocks', nozzleId);
+    if (existing && existing.shiftId && existing.shiftId !== shiftId) {
+      throw new Error(
+        `Nozzle is already in an active shift${existing.employeeName ? ' by ' + existing.employeeName : ''}. Ask them to close it first.`
+      );
+    }
+    await tx.set('nozzleLocks', nozzleId, {
+      nozzleId,
+      shiftId,
+      stationId,
+      userId,
+      employeeName: employeeName || null,
+      acquiredAt: new Date().toISOString(),
+    });
+    return true;
+  });
+}
+
+/** Release a nozzle lock, but only if this shift still owns it. */
+export async function releaseNozzleLock(nozzleId, shiftId) {
+  try {
+    await runInTransaction(async (tx) => {
+      const existing = await tx.get('nozzleLocks', nozzleId);
+      if (!existing) return true;
+      if (shiftId && existing.shiftId !== shiftId) return true; // not ours
+      await tx.delete('nozzleLocks', nozzleId);
+      return true;
+    });
+  } catch (e) {
+    console.warn('[FuelOps] failed to release nozzle lock', nozzleId, e);
+  }
+}

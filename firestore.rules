@@ -290,6 +290,22 @@ service cloud.firestore {
       allow delete: if isOwnerOrAbove()   && readInMyStation();
     }
 
+    // ------------------------------------------------------------ nozzleLocks
+
+    // Mutual-exclusion documents, id == nozzleId. Creating one is the atomic
+    // claim that stops a nozzle being in two active shifts at once. Only the
+    // holder (or a manager) may release a lock.
+    match /nozzleLocks/{nozzleId} {
+      allow read:   if readInMyStation();
+      allow create: if writeInMyStation()
+                    && isActive()
+                    && request.resource.data.get('nozzleId','') == nozzleId;
+      allow update: if readInMyStation()
+                    && (isManagerOrAbove() || resource.data.get('userId','') == request.auth.uid);
+      allow delete: if readInMyStation()
+                    && (isManagerOrAbove() || resource.data.get('userId','') == request.auth.uid);
+    }
+
     // ------------------------------------------------------------- auditLogs
 
     // Append-only. Anyone active may write an entry for themselves; nobody may

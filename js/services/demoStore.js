@@ -50,6 +50,21 @@ export function demoAdd(collection, doc) {
   return newDoc;
 }
 
+/**
+ * Create-or-replace a document at a caller-chosen id.
+ * Needed for documents whose id IS the key (e.g. nozzleLocks/{nozzleId}).
+ */
+export function demoSet(collection, id, doc) {
+  const data = ensureDemo();
+  if (!data[collection]) data[collection] = [];
+  const arr = data[collection];
+  const idx = arr.findIndex(d => d.id === id);
+  const newDoc = { ...doc, id };
+  if (idx >= 0) arr[idx] = newDoc; else arr.push(newDoc);
+  setDemoData(data);
+  return newDoc;
+}
+
 export function demoUpdate(collection, id, patch) {
   const data = ensureDemo();
   const arr = data[collection] || [];
