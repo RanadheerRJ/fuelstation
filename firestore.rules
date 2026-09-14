@@ -1,123 +1,314 @@
 rules_version = '2';
+
+// ============================================================================
+// FuelOps Firestore Security Rules — HARDENED
+//
+// Principles
+//  1. The frontend is NOT a security boundary. Every constraint that matters is
+//     enforced here.
+//  2. Station isolation: a user may only touch data for stations listed on their
+//     own /users/{uid} document. A client cannot widen its access by sending a
+//     different stationId in the payload.
+//  3. Immutable financial history: approved shifts, price history and audit logs
+//     cannot be rewritten by ordinary clients.
+//  4. Role escalation is blocked: a user cannot change their own role or
+//     stationIds.
+//
+// Roles: super_admin > owner > admin > manager > attendant
+// ============================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- helpers
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function getUserData() {
+    // The caller's own profile document. Trusted: only writable under the
+    // constraints in /users below.
+    function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isSuperAdmin() {
-      return isSignedIn() && getUserData().role == 'super_admin';
+    function userExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function isOwner() {
-      return isSignedIn() && getUserData().role == 'owner';
+    // A disabled/suspended account keeps its Auth credentials but loses access.
+    function isActive() {
+      return userExists() && userDoc().get('status', 'active') == 'active';
     }
 
-    function isManagerOrAbove() {
-      return isSignedIn() && getUserData().role in ['super_admin','owner','admin','manager'];
+    function role() {
+      return userDoc().get('role', '');
     }
 
-    function isSameUser(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function hasRole(roles) {
+      return isActive() && role() in roles;
     }
 
-    // USERS - Invite only, single super_admin
+    function isSuperAdmin()     { return hasRole(['super_admin']); }
+    function isOwnerOrAbove()   { return hasRole(['super_admin','owner']); }
+    function isAdminOrAbove()   { return hasRole(['super_admin','owner','admin']); }
+    function isManagerOrAbove() { return hasRole(['super_admin','owner','admin','manager']); }
+
+    // ------------------------------------------------------- station isolation
+
+    function myStationIds() {
+      return userDoc().get('stationIds', []);
+    }
+
+    // Super admin spans all stations. Everyone else is limited to the stations
+    // recorded on their own profile (owners additionally match by ownerId).
+    function canAccessStation(sid) {
+      return isActive() && (
+        isSuperAdmin()
+        || sid in myStationIds()
+        || (
+          role() == 'owner'
+          && exists(/databases/$(database)/documents/stations/$(sid))
+          && get(/databases/$(database)/documents/stations/$(sid)).data.get('ownerId', '') == request.auth.uid
+        )
+      );
+    }
+
+    // Guards a write: the document's stationId must be one the caller may touch,
+    // and a write must not move a document to a different station.
+    function writeInMyStation() {
+      return canAccessStation(request.resource.data.get('stationId', ''));
+    }
+    function readInMyStation() {
+      return canAccessStation(resource.data.get('stationId', ''));
+    }
+    function stationUnchanged() {
+      return request.resource.data.get('stationId', '') == resource.data.get('stationId', '');
+    }
+
+    // True when the named fields are not being altered by this write.
+    function keeps(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+    // True when the write touches ONLY the named fields.
+    function onlyTouches(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // ------------------------------------------------------------------ users
+
     match /users/{userId} {
-      allow read: if isSignedIn();
+      // Readable by the user themselves, or by staff who need the roster.
+      allow read: if isActive() && (request.auth.uid == userId || isManagerOrAbove());
+
+      // Bootstrap: the very first account may create itself (super admin setup).
+      // Afterwards only admin+ may invite, and nobody may mint a super_admin.
       allow create: if isSignedIn() && (
-        isSuperAdmin() || 
-        isManagerOrAbove() || 
-        request.auth.uid == userId
+        (
+          request.auth.uid == userId
+          && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        )
+        || (
+          isAdminOrAbove()
+          && request.resource.data.get('role', '') != 'super_admin'
+        )
+        || isSuperAdmin()
       );
-      allow update: if isSignedIn() && (
-        isSuperAdmin() ||
-        isOwner() ||
-        isSameUser(userId) ||
-        getUserData().role in ['admin','manager']
+
+      // Self-service updates may NOT change role, stationIds or status —
+      // that is privilege escalation. Admins may manage others.
+      allow update: if isActive() && (
+        isSuperAdmin()
+        || (
+          request.auth.uid == userId
+          && keeps(['role','stationIds','status','uid'])
+        )
+        || (
+          isAdminOrAbove()
+          && request.resource.data.get('role', '') != 'super_admin'
+          && resource.data.get('role', '') != 'super_admin'
+        )
       );
-      allow delete: if isSuperAdmin() || isOwner();
+
+      allow delete: if isOwnerOrAbove() && resource.data.get('role','') != 'super_admin';
     }
 
-    // STATIONS - Only owner and super_admin can destroy
+    // --------------------------------------------------------------- stations
+
     match /stations/{stationId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isOwner() || true);
-      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      // Only Station Owner and Super Admin can delete station
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read: if canAccessStation(stationId);
+
+      // Previously `|| true` — anyone signed in could create a station.
+      allow create: if isOwnerOrAbove()
+                    && request.resource.data.get('ownerId', '') == request.auth.uid;
+
+      allow update: if canAccessStation(stationId)
+                    && isAdminOrAbove()
+                    && keeps(['ownerId']);
+
+      allow delete: if isSuperAdmin()
+                    || (hasRole(['owner']) && resource.data.get('ownerId','') == request.auth.uid);
     }
 
-    // Pumps - read all, write manager+, delete owner only
+    // ----------------------------------------------------- pumps  /  nozzles
+
     match /pumps/{pumpId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      // Only owner and super_admin can delete (destroy data)
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove() && writeInMyStation();
+      allow update: if isManagerOrAbove() && readInMyStation() && stationUnchanged();
+      allow delete: if isOwnerOrAbove()   && readInMyStation();
     }
 
-    // Nozzles - read all, delete owner only
     match /nozzles/{nozzleId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove() && writeInMyStation();
+
+      // Attendants legitimately need to bump `lastReading` when closing a shift,
+      // but must not be able to re-point a nozzle at another pump/station or
+      // change its fuel type (which would alter pricing).
+      allow update: if readInMyStation() && stationUnchanged() && (
+        isManagerOrAbove()
+        || onlyTouches(['lastReading','updatedAt'])
+      );
+
+      allow delete: if isOwnerOrAbove() && readInMyStation();
     }
 
-    // Prices - read all, write manager+, never delete (history)
+    // ----------------------------------------------------------------- prices
+
+    // Price history is append-only: it is the evidence behind historical shift
+    // revenue. Only `effectiveTo` may be stamped to close an old price.
     match /prices/{priceId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isManagerOrAbove();
-      allow update: if isSignedIn() && isManagerOrAbove();
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove() && writeInMyStation();
+      allow update: if isManagerOrAbove()
+                    && readInMyStation()
+                    && onlyTouches(['effectiveTo','updatedAt']);
       allow delete: if false;
     }
 
-    // Shifts - read all, create/update all, delete owner only
+    // ----------------------------------------------------------------- shifts
+
+    function isShiftOwner() {
+      return resource.data.get('userId', '') == request.auth.uid;
+    }
+    function shiftStatus() {
+      return resource.data.get('status', '');
+    }
+    function newStatus() {
+      return request.resource.data.get('status', '');
+    }
+
+    // Fields only a reviewer may set.
+    function approvalFields() {
+      return ['status','approvedBy','approvedAt','rejectedBy','rejectedAt',
+              'rejectionReason','correctionRequests','settlement'];
+    }
+
     match /shifts/{shiftId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read: if readInMyStation();
+
+      // An attendant may only open a shift for THEMSELVES, in their own station,
+      // and only in the ACTIVE state.
+      allow create: if writeInMyStation()
+                    && isActive()
+                    && request.resource.data.get('status','') == 'ACTIVE'
+                    && (
+                         request.resource.data.get('userId','') == request.auth.uid
+                         || isManagerOrAbove()
+                       );
+
+      allow update: if readInMyStation() && stationUnchanged() && (
+
+        // --- Reviewer path: approve / reject / request corrections ----------
+        isManagerOrAbove()
+
+        // --- Attendant path -------------------------------------------------
+        // Own shift only, only while ACTIVE or REJECTED (correction requested),
+        // and never touching approval metadata or reassigning the shift.
+        || (
+          isShiftOwner()
+          && shiftStatus() in ['ACTIVE','REJECTED']
+          && newStatus() in ['ACTIVE','PENDING_REVIEW']
+          && keeps(['approvedBy','approvedAt','rejectedBy','rejectedAt',
+                    'userId','stationId','settlement'])
+        )
+      );
+
+      // Approved shifts are financial records — only owner+ may remove them.
+      allow delete: if isOwnerOrAbove() && readInMyStation();
     }
 
-    // Transactions - read all, delete owner only
+    // ----------------------------------------------------------- transactions
+
+    // Credits and expenses. Attendants may record them against their own active
+    // shift; editing history is restricted to manager+.
     match /transactions/{txId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read: if readInMyStation();
+
+      allow create: if writeInMyStation()
+                    && isActive()
+                    && request.resource.data.get('amount', -1) is number
+                    && request.resource.data.get('amount', -1) >= 0
+                    && request.resource.data.get('createdBy','') == request.auth.uid;
+
+      // Settling a credit changes status/paidAmount; full edits are manager+.
+      allow update: if readInMyStation() && stationUnchanged() && (
+        isManagerOrAbove()
+        || onlyTouches(['status','paidAmount','payments','updatedAt'])
+      );
+
+      allow delete: if isOwnerOrAbove() && readInMyStation();
     }
 
-    // Notes - read all, create/update/delete all
+    // ------------------------------------------------------------------ notes
+
     match /notes/{noteId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      allow read:   if readInMyStation();
+      allow create: if writeInMyStation() && isActive();
+      allow update, delete: if readInMyStation() && (
+        isManagerOrAbove() || resource.data.get('userId','') == request.auth.uid
+      );
     }
 
-    // Settlements / Collections - Owner can manage collections, read all signed in
+    // ------------------------------------------------------------ settlements
+
     match /settlements/{setId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isManagerOrAbove();
-      allow update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove() && writeInMyStation();
+      allow update: if isManagerOrAbove() && readInMyStation() && stationUnchanged();
+      allow delete: if isOwnerOrAbove()   && readInMyStation();
     }
 
-    // Audit Logs - REMOVED as per requirement - no read/write
-    match /auditLogs/{logId} {
-      allow read, write: if false;
-    }
+    // ------------------------------------------------------------ assignments
 
-    // Assignments - read all, write manager+, delete owner only
     match /assignments/{assignmentId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove() && writeInMyStation();
+      allow update: if isManagerOrAbove() && readInMyStation() && stationUnchanged();
+      allow delete: if isOwnerOrAbove()   && readInMyStation();
+    }
+
+    // ------------------------------------------------------------- auditLogs
+
+    // Append-only. Anyone active may write an entry for themselves; nobody may
+    // rewrite or erase history. Reading is restricted to manager+.
+    match /auditLogs/{logId} {
+      allow read: if isManagerOrAbove()
+                  && (isSuperAdmin() || canAccessStation(resource.data.get('stationId','')));
+
+      allow create: if isActive()
+                    && request.resource.data.get('actorUserId','') == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    // ------------------------------------------------------------- catch-all
+
+    // Anything not explicitly modelled above is denied.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

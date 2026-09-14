@@ -2,7 +2,7 @@ import { listDocs, addDocTo, updateDocById, queryDocs, logAudit } from './firest
 import { getState } from '../state.js';
 
 export async function getPrices(stationId) {
-  const all = await queryDocs('prices', p => p.stationId === stationId);
+  const all = await queryDocs('prices', null, [{ field: 'stationId', op: '==', value: stationId }]);
   // sort by effectiveFrom desc
   return all.sort((a,b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom));
 }
@@ -18,7 +18,7 @@ export async function getActivePrices(stationId) {
 }
 
 export async function getPriceForFuelAtTime(stationId, fuelType, atTime) {
-  const all = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType);
+  const all = await queryDocs('prices', null, [{ field: 'stationId', op: '==', value: stationId }, { field: 'fuelType', op: '==', value: fuelType }]);
   const at = new Date(atTime);
   // find price where effectiveFrom <= at and (effectiveTo == null or >= at)
   const candidates = all.filter(p => {
@@ -35,7 +35,7 @@ export async function getPriceForFuelAtTime(stationId, fuelType, atTime) {
 export async function setPrice(stationId, fuelType, price) {
   const { user } = getState();
   // close previous active price
-  const active = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType && !p.effectiveTo);
+  const active = await queryDocs('prices', p => !p.effectiveTo, [{ field: 'stationId', op: '==', value: stationId }, { field: 'fuelType', op: '==', value: fuelType }]);
   const now = new Date();
   for (const old of active) {
     await updateDocById('prices', old.id, { effectiveTo: now.toISOString() });

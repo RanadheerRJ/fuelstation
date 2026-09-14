@@ -24,8 +24,36 @@ const stationBadge = document.getElementById('stationBadge');
 const logoutTop = document.getElementById('logoutTop');
 const refreshTop = document.getElementById('refreshTop');
 
+/**
+ * Full-screen blocking error. Used when the backend is unreachable: we must not
+ * let the user carry on entering shift data that will never be saved.
+ */
+function renderFatalError(message) {
+  if (bottomNav) bottomNav.style.display = 'none';
+  if (topbar) topbar.style.display = 'none';
+  appRoot.innerHTML = `
+    <div style="padding:32px 20px;max-width:520px;margin:40px auto;text-align:center">
+      <div style="font-size:44px;line-height:1">⚠️</div>
+      <h2 style="margin:16px 0 8px">Cannot reach the server</h2>
+      <p style="color:var(--muted);margin:0 0 20px">${message}</p>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 20px">
+        Your data has <strong>not</strong> been saved locally. Nothing you enter now would
+        reach the station records, so the app is locked until the connection is restored.
+      </p>
+      <button class="btn btn-primary" id="fatalRetry">Retry</button>
+    </div>`;
+  document.getElementById('fatalRetry')?.addEventListener('click', () => location.reload());
+}
+
 async function bootstrap() {
-  await initFirebase();
+  try {
+    await initFirebase();
+  } catch (e) {
+    // initFirebase no longer silently falls back to demo/localStorage.
+    console.error('[FuelOps] Fatal: backend unavailable', e);
+    renderFatalError(e?.message || 'Firebase could not be initialized.');
+    return;
+  }
   console.log('[FuelOps] Firebase status', getFirebaseStatus());
 
   // Register routes (hash based)

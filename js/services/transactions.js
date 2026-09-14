@@ -38,13 +38,13 @@ export async function addExpense({ stationId, shiftId, category, amount, descrip
 }
 
 export async function getTransactions(stationId, opts={}) {
-  let all = await queryDocs('transactions', t => t.stationId === stationId);
+  let all = await queryDocs('transactions', null, [{ field: 'stationId', op: '==', value: stationId }]);
   if (opts.shiftId) all = all.filter(t => t.shiftId === opts.shiftId);
   if (opts.type) all = all.filter(t => t.type === opts.type);
   return all.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 export async function getCreditsReport(stationId) {
-  const credits = await queryDocs('transactions', t => t.stationId === stationId && t.type === 'credit');
+  const credits = await queryDocs('transactions', null, [{ field: 'stationId', op: '==', value: stationId }, { field: 'type', op: '==', value: 'credit' }]);
   return credits;
 }

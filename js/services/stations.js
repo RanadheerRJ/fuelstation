@@ -127,7 +127,7 @@ export async function resetStationData(stationId) {
     const collections = ['pumps','nozzles','prices','shifts','transactions','notes','assignments'];
     
     for (const coll of collections) {
-      const docs = await queryDocs(coll, d => d.stationId === stationId);
+      const docs = await queryDocs(coll, null, [{ field: 'stationId', op: '==', value: stationId }]);
       console.log(`[Reset Station ${stationId}] Deleting ${docs.length} docs from ${coll}`);
       for (const doc of docs) {
         try {

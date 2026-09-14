@@ -2,13 +2,13 @@ import { listDocs, addDocTo, updateDocById, getDocById, deleteDocById, logAudit,
 import { getState } from '../state.js';
 
 export async function getPumps(stationId) {
-  return await queryDocs('pumps', p => p.stationId === stationId);
+  return await queryDocs('pumps', null, [{ field: 'stationId', op: '==', value: stationId }]);
 }
 export async function getNozzles(stationId) {
-  return await queryDocs('nozzles', n => n.stationId === stationId);
+  return await queryDocs('nozzles', null, [{ field: 'stationId', op: '==', value: stationId }]);
 }
 export async function getNozzlesForPump(pumpId) {
-  return await queryDocs('nozzles', n => n.pumpId === pumpId);
+  return await queryDocs('nozzles', null, [{ field: 'pumpId', op: '==', value: pumpId }]);
 }
 export async function getNozzleById(id) { return await getDocById('nozzles', id); }
 
@@ -53,7 +53,7 @@ export async function deletePump(id) {
   if (!pump) throw new Error('Pump not found');
   
   // Check active shifts using this pump
-  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  const activeShifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: pump.stationId }, { field: 'status', op: '==', value: 'ACTIVE' }]);
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n => n.pumpId === id)) {
       throw new Error(`Cannot delete: Pump is busy — ${sh.employeeName} is working on it (active shift). Wait until shift ends.`);
@@ -86,7 +86,7 @@ export async function deleteNozzle(id) {
   if (!nozzle) throw new Error('Nozzle not found');
 
   // Check active shifts
-  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  const activeShifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: nozzle.stationId }, { field: 'status', op: '==', value: 'ACTIVE' }]);
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n => n.nozzleId === id)) {
       throw new Error(`Cannot delete: Nozzle is in active shift by ${sh.employeeName}. Wait until shift ends.`);

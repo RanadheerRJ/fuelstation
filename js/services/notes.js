@@ -19,7 +19,7 @@ export async function addNote({ stationId, shiftId, text, pumpId, nozzleId }) {
 }
 
 export async function getNotes(stationId, opts={}) {
-  let all = await queryDocs('notes', n => n.stationId === stationId);
+  let all = await queryDocs('notes', null, [{ field: 'stationId', op: '==', value: stationId }]);
   if (opts.shiftId) all = all.filter(n => n.shiftId === opts.shiftId);
   return all.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }

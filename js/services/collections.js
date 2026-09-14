@@ -6,7 +6,7 @@ import { getState } from '../state.js';
 const COLL = 'settlements';
 
 export async function getSettlements(stationId) {
-  let all = await queryDocs(COLL, s => s.stationId === stationId);
+  let all = await queryDocs(COLL, null, [{ field: 'stationId', op: '==', value: stationId }]);
   return all.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 

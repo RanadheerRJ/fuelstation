@@ -4,19 +4,19 @@ import { calcLitersSold, calcRevenue, calcShiftTotals, calcPaymentsTotal, calcVa
 import { getPriceForFuelAtTime } from './prices.js';
 
 export async function getShifts(stationId, opts={}) {
-  let shifts = await queryDocs('shifts', s => s.stationId === stationId);
+  let shifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: stationId }]);
   if (opts.userId) shifts = shifts.filter(s => s.userId === opts.userId);
   if (opts.status) shifts = shifts.filter(s => s.status === opts.status);
   return shifts.sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
 }
 
 export async function getActiveShiftForUser(userId) {
-  const all = await queryDocs('shifts', s => s.userId === userId && s.status === 'ACTIVE');
+  const all = await queryDocs('shifts', null, [{ field: 'userId', op: '==', value: userId }, { field: 'status', op: '==', value: 'ACTIVE' }]);
   return all[0] || null;
 }
 
 export async function startShift({ stationId, userId, employeeName, nozzles }) {
-  const activeShifts = await queryDocs('shifts', s => s.stationId === stationId && s.status === 'ACTIVE');
+  const activeShifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: stationId }, { field: 'status', op: '==', value: 'ACTIVE' }]);
   for (const sh of activeShifts) {
     for (const n of sh.nozzles || []) {
       if (nozzles.some(nn => nn.nozzleId === n.nozzleId)) {
@@ -76,7 +76,7 @@ export async function closeShift(shiftId, { closingReadings, payments }) {
   // Expenses must be removed from gross because fuel came out of nozzle (testing etc) - whole amount to owner is net
   let totalExpenses = 0;
   try {
-    const txs = await queryDocs('transactions', t => t.stationId === shift.stationId && t.shiftId === shift.id && t.type === 'expense');
+    const txs = await queryDocs('transactions', null, [{ field: 'stationId', op: '==', value: shift.stationId }, { field: 'shiftId', op: '==', value: shift.id }, { field: 'type', op: '==', value: 'expense' }]);
     totalExpenses = txs.reduce((a,b)=>a+Number(b.amount||0),0);
   } catch { totalExpenses = 0; }
 
@@ -181,7 +181,7 @@ export async function addNozzleToShift(shiftId, { nozzleId, pumpId, fuelType, op
   }
 
   // Check nozzle not in other active shifts
-  const activeShifts = await queryDocs('shifts', s => s.stationId === shift.stationId && s.status === 'ACTIVE' && s.id !== shiftId);
+  const activeShifts = await queryDocs('shifts', s => s.id !== shiftId, [{ field: 'stationId', op: '==', value: shift.stationId }, { field: 'status', op: '==', value: 'ACTIVE' }]);
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n=>n.nozzleId===nozzleId)) {
       throw new Error(`Nozzle already has an active shift by ${sh.employeeName}`);
