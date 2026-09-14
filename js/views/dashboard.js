@@ -3,6 +3,8 @@ import { getBusinessDate, formatBusinessDate, formatBusinessTime } from '../serv
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
 import { formatCurrency, formatLiters } from '../services/calc.js';
+import { getStockSummary, normalizeFuel, FUEL_LABEL } from '../services/stock.js';
+import { getActivePrices } from '../services/prices.js';
 
 export async function dashboardView({ root }) {
   const { user, currentStationId } = getState();
@@ -86,6 +88,23 @@ export async function dashboardView({ root }) {
     nozzles = await getNozzles(activeStation.id);
     employees = await getEmployees(activeStation.id);
   } catch {}
+
+  // Stock ledger + today's prices for the owner hero box.
+  let stockSummary = {}, activePriceMap = {};
+  try { stockSummary = await getStockSummary(activeStation.id, allShifts); } catch {}
+  try { activePriceMap = await getActivePrices(activeStation.id); } catch {}
+
+  // Present MS and HSD first, then anything else the station actually stocks.
+  const priceByFuel = {};
+  Object.entries(activePriceMap || {}).forEach(([ft, p]) => { priceByFuel[normalizeFuel(ft)] = p?.price; });
+  const fuelKeys = Array.from(new Set(['MS','HSD', ...Object.keys(stockSummary), ...Object.keys(priceByFuel)]));
+  const stockRows = fuelKeys.map(f => ({
+    fuel: f,
+    label: FUEL_LABEL[f] || f,
+    available: stockSummary[f]?.available ?? null,
+    price: priceByFuel[f] ?? null,
+    hasData: !!stockSummary[f] || priceByFuel[f] != null,
+  })).filter(r => r.fuel === 'MS' || r.fuel === 'HSD' || r.hasData);
 
   // Today calculations
   const todayShiftsAll = allShifts.filter(s=> getBusinessDate(s.startTime)===todayStr);
@@ -333,27 +352,37 @@ export async function dashboardView({ root }) {
         </div>
       </div>
 
-      <!-- 1. HERO • Litres sold today -->
-      <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:22px;color:white;margin-top:16px;position:relative;overflow:hidden">
+      <!-- 1. HERO • Stock in tank + today's price -->
+      <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden">
         <div style="position:absolute;top:-40px;right:-40px;width:160px;height:160px;background:rgba(255,90,31,0.10);border-radius:50%"></div>
         <div style="position:relative;z-index:1">
-          <div style="font-size:10px;opacity:0.6;letter-spacing:1px">LITRES SOLD • TODAY</div>
-          <div style="font-size:38px;font-weight:800;margin-top:4px;letter-spacing:-1.5px">${formatLiters(totalLitersAll).replace(' L','')}<span style="font-size:18px;opacity:0.5;font-weight:600"> L</span></div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.1)">
-              <div style="font-size:10px;opacity:0.6;letter-spacing:0.5px">PETROL • MS</div>
-              <div style="font-size:20px;font-weight:800;margin-top:2px">${formatLiters(msLitersAll).replace(' L','')}<span style="font-size:11px;opacity:0.5;font-weight:600"> L</span></div>
-            </div>
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.1)">
-              <div style="font-size:10px;opacity:0.6;letter-spacing:0.5px">DIESEL • HSD</div>
-              <div style="font-size:20px;font-weight:800;margin-top:2px">${formatLiters(hsdLitersAll).replace(' L','')}<span style="font-size:11px;opacity:0.5;font-weight:600"> L</span></div>
-            </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:10px;opacity:0.6;letter-spacing:1px">STOCK IN TANK</div>
+            <button id="addDelivery" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px">+ Tanker</button>
           </div>
 
-          <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;font-size:11px;opacity:0.65">
-            <span>${todayShiftsAll.length} shift${todayShiftsAll.length===1?'':'s'} today</span>
+          <div style="margin-top:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:14px;overflow:hidden">
+            ${stockRows.map((r,i)=>`
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 14px;${i>0?'border-top:1px solid rgba(255,255,255,0.08)':''}">
+                <div style="min-width:64px">
+                  <div style="font-weight:800;font-size:14px;letter-spacing:0.5px">${r.fuel}</div>
+                  <div style="font-size:9px;opacity:0.5">${r.label}</div>
+                </div>
+                <div style="text-align:right;flex:1">
+                  <div style="font-size:9px;opacity:0.5;letter-spacing:0.5px">STOCK</div>
+                  <div style="font-weight:800;font-size:17px;margin-top:1px;${r.available!=null&&r.available<=1000?'color:#ff7875':''}">${r.available==null?'—':formatLiters(r.available).replace(' L','')}<span style="font-size:10px;opacity:0.5;font-weight:600"> L</span></div>
+                </div>
+                <div style="width:1px;align-self:stretch;background:rgba(255,255,255,0.1);margin:0 14px"></div>
+                <div style="text-align:right;min-width:78px">
+                  <div style="font-size:9px;opacity:0.5;letter-spacing:0.5px">TODAY'S PRICE</div>
+                  <div style="font-weight:800;font-size:17px;margin-top:1px">${r.price==null?'—':formatCurrency(r.price)}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;font-size:11px;opacity:0.65">
             <span>${activeShifts.length} running now</span>
+            <span>${formatLiters(totalLitersAll).replace(' L','')} L sold today</span>
           </div>
         </div>
       </div>
@@ -421,6 +450,63 @@ export async function dashboardView({ root }) {
   `;
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });
+
+  // ---- Record a tanker delivery -------------------------------------------
+  root.querySelector('#addDelivery')?.addEventListener('click', ()=>{
+    const modalRoot = document.getElementById('modalRoot') || (()=>{
+      const d=document.createElement('div'); d.id='modalRoot'; document.body.appendChild(d); return d;
+    })();
+    const fuelOpts = stockRows.map(r=>`<option value="${r.fuel}">${r.fuel} • ${r.label}</option>`).join('');
+    modalRoot.innerHTML = `
+      <div id="dlBackdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:grid;place-items:center;z-index:100;padding:16px">
+        <div style="background:white;border-radius:18px;padding:20px;width:100%;max-width:400px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="font-weight:800;font-size:16px">🚛 Tanker Intake</h3>
+            <button id="dlClose" style="min-height:36px;min-width:36px;border-radius:50%;border:1px solid var(--border);background:white">✕</button>
+          </div>
+          <div id="dlAlert"></div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+            <div>
+              <label class="label">Fuel</label>
+              <select id="dlFuel" class="neu-select" style="min-height:46px;border-radius:10px;width:100%">${fuelOpts}</select>
+            </div>
+            <div>
+              <label class="label">Litres received</label>
+              <input id="dlLiters" class="neu-input" type="text" inputmode="decimal" placeholder="e.g. 12000" style="min-height:46px;border-radius:10px;width:100%">
+            </div>
+            <div>
+              <label class="label">Note (tanker number, supplier, invoice)</label>
+              <input id="dlNote" class="neu-input" type="text" placeholder="e.g. IOC tanker TS09 AB 1234" style="min-height:46px;border-radius:10px;width:100%">
+            </div>
+            <button id="dlSave" class="neu-btn neu-btn--primary" style="min-height:50px;border-radius:12px;font-weight:700">Save Intake</button>
+          </div>
+        </div>
+      </div>`;
+    const close = ()=> modalRoot.innerHTML='';
+    modalRoot.querySelector('#dlClose').addEventListener('click', close);
+    modalRoot.querySelector('#dlBackdrop').addEventListener('click', e=>{ if(e.target.id==='dlBackdrop') close(); });
+    modalRoot.querySelector('#dlSave').addEventListener('click', async ()=>{
+      const btn = modalRoot.querySelector('#dlSave');
+      const alert = modalRoot.querySelector('#dlAlert');
+      alert.innerHTML='';
+      btn.disabled = true; btn.textContent = 'Saving...';
+      try {
+        const { addDelivery } = await import('../services/stock.js');
+        const res = await addDelivery({
+          stationId: activeStation.id,
+          fuelType: modalRoot.querySelector('#dlFuel').value,
+          liters: modalRoot.querySelector('#dlLiters').value,
+          note: modalRoot.querySelector('#dlNote').value,
+        });
+        if (res?.warning) console.warn(res.warning);
+        close();
+        dashboardView({ root });
+      } catch(e) {
+        alert.innerHTML = `<div style="margin-top:12px;padding:10px;background:#fff1f0;border:1px solid #ffccc7;border-radius:10px;color:#cf1322;font-size:12px">${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Save Intake';
+      }
+    });
+  });
 }
 
 function getGreeting(){

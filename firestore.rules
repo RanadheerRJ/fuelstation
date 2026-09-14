@@ -290,6 +290,21 @@ service cloud.firestore {
       allow delete: if isOwnerOrAbove()   && readInMyStation();
     }
 
+    // ------------------------------------------------------------ deliveries
+
+    // Tanker intake. Append-only: a mistaken entry is corrected with a new
+    // adjustment record, never by rewriting the tank ledger.
+    match /deliveries/{deliveryId} {
+      allow read:   if readInMyStation();
+      allow create: if isManagerOrAbove()
+                    && writeInMyStation()
+                    && request.resource.data.get('liters', -1) is number
+                    && request.resource.data.get('liters', -1) > 0
+                    && request.resource.data.get('recordedBy','') == request.auth.uid;
+      allow update: if false;
+      allow delete: if isSuperAdmin();
+    }
+
     // ------------------------------------------------------------ nozzleLocks
 
     // Mutual-exclusion documents, id == nozzleId. Creating one is the atomic

@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v45-owner-dashboard-clean-20260914';
+const CACHE_NAME = 'fuelops-v46-stock-intake-20260914';
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const APP_SHELL = [
   './js/auth.js',
   './js/services/calc.js',
   './js/services/money.js',
+  './js/services/stock.js',
   './js/services/datetime.js',
   './js/services/demoStore.js',
   './js/services/firestoreService.js',

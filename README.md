@@ -253,6 +253,7 @@ date, so between 00:00 and 05:30 IST it reports the previous day.
 - [x] Create employees
 - [x] Configure pumps/nozzles
 - [x] Set fuel prices (history)
+- [x] Fuel stock: tanker intake + live tank balance
 - [x] Assign nozzles (via shift start selection)
 - [x] Start shift with multiple nozzles
 - [x] Enter opening readings
@@ -269,7 +270,6 @@ date, so between 00:00 and 05:30 IST it reports the previous day.
 
 ## 🚧 What NOT built (Phase 2)
 
-- Inventory/tank monitoring
 - Fuel delivery
 - Accounting/payroll
 - Notifications/SMS

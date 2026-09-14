@@ -79,6 +79,19 @@ export async function startShiftView({ root }) {
   const pumps = await getPumps(stationId);
   const nozzles = await getNozzles(stationId);
   const activeNozzles = nozzles.filter(n=>n.status==='active');
+
+  // Which nozzles are already claimed by someone else's open shift? Previously
+  // every nozzle looked available and the clash only surfaced as an error
+  // after submitting.
+  const busyByNozzle = {};
+  try {
+    const openShifts = await getShifts(stationId, { status: 'ACTIVE' });
+    openShifts.forEach(sh => (sh.nozzles||[]).forEach(n => {
+      busyByNozzle[n.nozzleId] = sh.employeeName || 'another employee';
+    }));
+  } catch {}
+  const freeCount = activeNozzles.filter(n => !busyByNozzle[n.id]).length;
+
   root.innerHTML = `
     <div class="container" style="max-width:480px;margin:0 auto">
       <h1 class="page-title">Start Shift</h1>
@@ -93,8 +106,24 @@ export async function startShiftView({ root }) {
         <div class="list" style="margin-top:14px;display:flex;flex-direction:column;gap:10px" id="nozzleList">
           ${activeNozzles.map(n=>{
             const pump = pumps.find(p=>p.id===n.pumpId);
+            const busyWith = busyByNozzle[n.id];
+            if (busyWith) {
+              // Greyed out and unselectable, with a clear reason.
+              return `<div class="neu-card neu-card--sm" style="padding:14px;border-radius:12px;opacity:0.65;background:#f5f5f5;border:1px dashed #d9d9d9">
+                <div style="display:flex;gap:12px;align-items:center;font-weight:600;font-size:14px;color:var(--text-secondary)">
+                  <span style="font-size:16px">🔒</span>
+                  <span>${pump?.name||'Pump'} - Nozzle ${n.number} • ${n.fuelType}</span>
+                </div>
+                <div style="margin-top:8px;font-size:12px;color:#ad6800;background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:8px 10px">
+                  Currently in use by <b>${busyWith}</b>. Close that shift before you take over.
+                </div>
+              </div>`;
+            }
             return `<div class="neu-card neu-card--sm" style="padding:14px;border-radius:12px;display:flex;flex-direction:column;gap:12px"><label style="display:flex;gap:12px;align-items:center;font-weight:600;font-size:14px;cursor:pointer"><input type="checkbox" class="nz-check" data-id="${n.id}" data-pump="${n.pumpId}" data-fuel="${n.fuelType}" data-last="${n.lastReading||0}" style="width:18px;height:18px"> ${pump?.name||'Pump'} - Nozzle ${n.number} • ${n.fuelType}</label><div><label class="label">Opening Reading</label><input class="neu-input nz-opening" data-id="${n.id}" type="number" step="0.01" value="${n.lastReading||0}" disabled style="min-height:44px;border-radius:10px;font-size:15px"></div></div>`;
           }).join('') || `<p style="font-size:13px;color:var(--text-secondary);padding:12px">No active nozzles</p>`}
+          ${activeNozzles.length>0 && freeCount===0 ? `<div style="padding:14px;background:#fff1f0;border:1px solid #ffccc7;border-radius:12px;font-size:13px;color:#cf1322;text-align:center">
+            <b>No nozzles available.</b><br>All nozzles are currently in use. They must be closed before you can start a shift.
+          </div>` : ''}
         </div>
       </div>
       <div id="alertBox" style="margin-top:14px"></div>
