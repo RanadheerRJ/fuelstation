@@ -343,8 +343,8 @@ export async function dashboardView({ root }) {
       <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
         <div>
           <div style="font-size:11px;color:var(--text-secondary);letter-spacing:0.8px;text-transform:uppercase">${getGreeting().toUpperCase()} • ${formatBusinessDate(new Date())}</div>
-          <h1 style="font-size:24px;font-weight:800;letter-spacing:-0.6px;margin-top:2px">${user.name?.split(' ')[0] || 'Owner'} 👋</h1>
-          <p style="font-size:12px;color:var(--text-secondary);margin-top:2px">⛽ ${activeStation.name}</p>
+          <h1 style="font-size:20px;font-weight:800;letter-spacing:-0.4px;margin-top:4px;line-height:1.25">⛽ ${activeStation.name}</h1>
+          <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">${user.name?.split(' ')[0] || 'Owner'} 👋</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           ${stations.length>1 ? `<select id="stationSwitch" style="min-height:40px;border-radius:12px;border:1.5px solid var(--border);padding:0 10px;font-size:12px;font-weight:600;background:white;max-width:110px">${stations.map(s=>`<option value="${s.id}" ${s.id===activeStation.id?'selected':''}>${s.name}</option>`).join('')}</select>` : ''}
@@ -358,7 +358,8 @@ export async function dashboardView({ root }) {
         <div style="position:relative;z-index:1">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div style="font-size:10px;opacity:0.6;letter-spacing:1px">STOCK IN TANK</div>
-            <button id="addDelivery" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px">+ Tanker</button>
+            <!-- Tanker intake + price updates now live together on #/prices (More > Fuel Prices & Stock). -->
+            <button style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px" onclick="location.hash='#/prices'">Manage</button>
           </div>
 
           <div style="margin-top:12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:14px;overflow:hidden">
@@ -451,62 +452,6 @@ export async function dashboardView({ root }) {
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });
 
-  // ---- Record a tanker delivery -------------------------------------------
-  root.querySelector('#addDelivery')?.addEventListener('click', ()=>{
-    const modalRoot = document.getElementById('modalRoot') || (()=>{
-      const d=document.createElement('div'); d.id='modalRoot'; document.body.appendChild(d); return d;
-    })();
-    const fuelOpts = stockRows.map(r=>`<option value="${r.fuel}">${r.fuel} • ${r.label}</option>`).join('');
-    modalRoot.innerHTML = `
-      <div id="dlBackdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);display:grid;place-items:center;z-index:100;padding:16px">
-        <div style="background:white;border-radius:18px;padding:20px;width:100%;max-width:400px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <h3 style="font-weight:800;font-size:16px">🚛 Tanker Intake</h3>
-            <button id="dlClose" style="min-height:36px;min-width:36px;border-radius:50%;border:1px solid var(--border);background:white">✕</button>
-          </div>
-          <div id="dlAlert"></div>
-          <div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
-            <div>
-              <label class="label">Fuel</label>
-              <select id="dlFuel" class="neu-select" style="min-height:46px;border-radius:10px;width:100%">${fuelOpts}</select>
-            </div>
-            <div>
-              <label class="label">Litres received</label>
-              <input id="dlLiters" class="neu-input" type="text" inputmode="decimal" placeholder="e.g. 12000" style="min-height:46px;border-radius:10px;width:100%">
-            </div>
-            <div>
-              <label class="label">Note (tanker number, supplier, invoice)</label>
-              <input id="dlNote" class="neu-input" type="text" placeholder="e.g. IOC tanker TS09 AB 1234" style="min-height:46px;border-radius:10px;width:100%">
-            </div>
-            <button id="dlSave" class="neu-btn neu-btn--primary" style="min-height:50px;border-radius:12px;font-weight:700">Save Intake</button>
-          </div>
-        </div>
-      </div>`;
-    const close = ()=> modalRoot.innerHTML='';
-    modalRoot.querySelector('#dlClose').addEventListener('click', close);
-    modalRoot.querySelector('#dlBackdrop').addEventListener('click', e=>{ if(e.target.id==='dlBackdrop') close(); });
-    modalRoot.querySelector('#dlSave').addEventListener('click', async ()=>{
-      const btn = modalRoot.querySelector('#dlSave');
-      const alert = modalRoot.querySelector('#dlAlert');
-      alert.innerHTML='';
-      btn.disabled = true; btn.textContent = 'Saving...';
-      try {
-        const { addDelivery } = await import('../services/stock.js');
-        const res = await addDelivery({
-          stationId: activeStation.id,
-          fuelType: modalRoot.querySelector('#dlFuel').value,
-          liters: modalRoot.querySelector('#dlLiters').value,
-          note: modalRoot.querySelector('#dlNote').value,
-        });
-        if (res?.warning) console.warn(res.warning);
-        close();
-        dashboardView({ root });
-      } catch(e) {
-        alert.innerHTML = `<div style="margin-top:12px;padding:10px;background:#fff1f0;border:1px solid #ffccc7;border-radius:10px;color:#cf1322;font-size:12px">${e.message}</div>`;
-        btn.disabled = false; btn.textContent = 'Save Intake';
-      }
-    });
-  });
 }
 
 function getGreeting(){
