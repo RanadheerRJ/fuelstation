@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v40-reports-ultra-clean-who-which-pump-date-20260914';
+const CACHE_NAME = 'fuelops-v41-reports-only-who-pump-date-20260914';
 const APP_SHELL = [
   './',
   './index.html',

@@ -9,12 +9,9 @@ export async function reportsView({ root, query }) {
   const { user, currentStationId } = getState();
   const stations = await getStationsForCurrentUser();
   const stationId = currentStationId || stations[0]?.id;
-  if (!stationId) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
+  if (!stationId) { root.innerHTML=`<div class="container"><div style="background:white;border-radius:16px;padding:24px;text-align:center;border:1px solid #e5e7eb">No station</div></div>`; return; }
 
-  const isOwner = ['owner','admin','super_admin'].includes(user.role);
-  const isManager = user.role === 'manager';
   const isAttendant = user.role === 'attendant';
-  const canSeeAll = isOwner || isManager;
 
   const today = new Date();
   const todayStr = today.toISOString().slice(0,10);
@@ -34,7 +31,6 @@ export async function reportsView({ root, query }) {
   if (isAttendant) employeeFilter = user.uid;
 
   const allShiftsRaw = await getShifts(stationId);
-
   let employeesList = [];
   try {
     employeesList = await getEmployees(stationId);
@@ -68,7 +64,7 @@ export async function reportsView({ root, query }) {
     });
   }
 
-  // Totals
+  // totals
   let totalLiters = 0, msLiters = 0, hsdLiters = 0;
   filteredShifts.forEach(s=>{
     totalLiters += s.totals?.totalLiters||0;
@@ -79,7 +75,7 @@ export async function reportsView({ root, query }) {
     });
   });
 
-  // Group by date
+  // group by date
   const grouped = {};
   filteredShifts.sort((a,b)=> new Date(b.startTime) - new Date(a.startTime));
   filteredShifts.forEach(s=>{
@@ -92,144 +88,114 @@ export async function reportsView({ root, query }) {
   const fmtLit = (v)=> formatLiters(v).replace(' L','L').replace('.00','');
   const fmtDateLong = (iso)=>{
     const d = new Date(iso);
-    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric', weekday:'short'});
+    return d.toLocaleDateString('en-IN',{weekday:'short', day:'2-digit', month:'short', year:'numeric'});
+  };
+  const fmtDateShort = (iso)=>{
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-IN',{day:'2-digit', month:'short'});
   };
   const fmtTime = (iso)=> new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
   root.innerHTML = `
-    <div class="container" style="max-width:520px;margin:0 auto;padding-bottom:110px">
-      <!-- Header ultra clean -->
-      <div style="padding:4px 2px 14px 2px">
-        <h1 style="font-size:26px;font-weight:800;letter-spacing:-0.8px">Reports</h1>
-        <p style="font-size:12px;color:var(--text-secondary);margin-top:2px">${stations.find(s=>s.id===stationId)?.name||''} • Who worked on which pump • which date</p>
+    <div class="container" style="max-width:540px;margin:0 auto;padding-bottom:110px">
+      <!-- Header - only title -->
+      <div style="padding:6px 4px 12px 4px">
+        <h1 style="font-size:28px;font-weight:900;letter-spacing:-1px;line-height:1">Reports</h1>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">${stations.find(s=>s.id===stationId)?.name||''} • ${filteredShifts.length} reports • ${fmtLit(msLiters)} MS • ${fmtLit(hsdLiters)} HSD • ${fmtLit(totalLiters)} total</div>
       </div>
 
-      <!-- Filters ultra clean iOS -->
-      <div style="background:white;border-radius:18px;padding:14px;border:1px solid #e5e7eb">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:11px;font-weight:800;letter-spacing:0.8px;color:#111">FILTERS</span>
-          <span style="font-size:11px;color:#6b7280">${filteredShifts.length} shifts • ${fmtLit(totalLiters)}</span>
-        </div>
-
-        <!-- Date quick pills -->
-        <div style="margin-top:12px;display:flex;gap:6px;overflow:auto;padding-bottom:2px">
-          ${[
-            {label:'Today', from: todayStr, to: todayStr},
-            {label:'Yesterday', from: yesterdayStr, to: yesterdayStr},
-            {label:'7 Days', from: weekStr, to: todayStr},
-            {label:'Month', from: monthStart, to: todayStr},
-            {label:'30 Days', from: last30Str, to: todayStr},
-            {label:'All', from: allTime, to: todayStr},
-          ].map(b=>{
-            const active = fromDate===b.from && toDate===b.to;
-            return `<button data-from="${b.from}" data-to="${b.to}" class="date-pill" style="min-height:34px;padding:0 14px;border-radius:20px;border:1.5px solid ${active?'#111':'#e5e7eb'};background:${active?'#111':'white'};color:${active?'white':'#111'};font-weight:700;font-size:12px;white-space:nowrap">${b.label}</button>`;
-          }).join('')}
-        </div>
-
-        <!-- Custom date inputs -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-          <div>
-            <div style="font-size:10px;color:#6b7280;font-weight:600;margin-bottom:4px">FROM</div>
-            <input type="date" id="fromDate" value="${fromDate}" style="width:100%;min-height:42px;border-radius:10px;border:1.5px solid #e5e7eb;padding:0 10px;font-size:13px;background:#f9fafb">
+      <!-- Filters - minimal iOS -->
+      <div style="background:white;border-radius:20px;border:1px solid #e5e7eb;overflow:hidden">
+        <div style="padding:14px 14px 10px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:800;letter-spacing:1px">FILTERS</div>
+            <div style="font-size:11px;color:#6b7280">${fromDate===weekStr && toDate===todayStr ? 'Last 7 Days' : fromDate===todayStr ? 'Today' : fromDate===allTime ? 'All Time' : fmtDateShort(fromDate)+' → '+fmtDateShort(toDate)} • ${employeeFilter==='all'?'All': employeesList.find(e=>(e.uid||e.id)===employeeFilter)?.name?.split(' ')[0]||'1'} • ${fuelFilter}</div>
           </div>
-          <div>
-            <div style="font-size:10px;color:#6b7280;font-weight:600;margin-bottom:4px">TO</div>
-            <input type="date" id="toDate" value="${toDate}" style="width:100%;min-height:42px;border-radius:10px;border:1.5px solid #e5e7eb;padding:0 10px;font-size:13px;background:#f9fafb">
-          </div>
-        </div>
 
-        <!-- Employee + Fuel row -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-          <div>
-            <div style="font-size:10px;color:#6b7280;font-weight:600;margin-bottom:4px">EMPLOYEE</div>
-            <select id="empSelect" style="width:100%;min-height:42px;border-radius:10px;border:1.5px solid #e5e7eb;padding:0 10px;font-size:13px;background:#f9fafb;font-weight:600" ${isAttendant?'disabled':''}>
-              <option value="all" ${employeeFilter==='all'?'selected':''}>All Employees</option>
+          <!-- Date pills - only what needed -->
+          <div style="margin-top:12px;display:flex;gap:6px;overflow:auto;padding-bottom:2px;scrollbar-width:none">
+            ${[
+              {label:'Today', from: todayStr, to: todayStr},
+              {label:'Yesterday', from: yesterdayStr, to: yesterdayStr},
+              {label:'7 Days', from: weekStr, to: todayStr},
+              {label:'Month', from: monthStart, to: todayStr},
+              {label:'All', from: allTime, to: todayStr},
+            ].map(b=>{
+              const active = fromDate===b.from && toDate===b.to;
+              return `<button data-from="${b.from}" data-to="${b.to}" class="date-pill" style="min-height:32px;padding:0 12px;border-radius:20px;border:1.5px solid ${active?'#111':'#e5e7eb'};background:${active?'#111':'white'};color:${active?'white':'#111'};font-weight:700;font-size:11px;white-space:nowrap">${b.label}</button>`;
+            }).join('')}
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+            <input type="date" id="fromDate" value="${fromDate}" style="width:100%;min-height:40px;border-radius:12px;border:1px solid #e5e7eb;padding:0 10px;font-size:12px;background:#f9fafb">
+            <input type="date" id="toDate" value="${toDate}" style="width:100%;min-height:40px;border-radius:12px;border:1px solid #e5e7eb;padding:0 10px;font-size:12px;background:#f9fafb">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+            <select id="empSelect" style="width:100%;min-height:42px;border-radius:12px;border:1px solid #e5e7eb;padding:0 10px;font-size:12px;background:#f9fafb;font-weight:600" ${isAttendant?'disabled':''}>
+              <option value="all" ${employeeFilter==='all'?'selected':''}>👤 All Employees</option>
               ${employeesList.map(e=>`<option value="${e.uid||e.id}" ${employeeFilter===(e.uid||e.id)?'selected':''}>${e.name||e.phone}</option>`).join('')}
             </select>
-          </div>
-          <div>
-            <div style="font-size:10px;color:#6b7280;font-weight:600;margin-bottom:4px">FUEL TYPE</div>
-            <select id="fuelSelect" style="width:100%;min-height:42px;border-radius:10px;border:1.5px solid #e5e7eb;padding:0 10px;font-size:13px;background:#f9fafb;font-weight:600">
-              <option value="all" ${fuelFilter==='all'?'selected':''}>All Fuel</option>
+            <select id="fuelSelect" style="width:100%;min-height:42px;border-radius:12px;border:1px solid #e5e7eb;padding:0 10px;font-size:12px;background:#f9fafb;font-weight:600">
+              <option value="all" ${fuelFilter==='all'?'selected':''}>⛽ All Fuel</option>
               <option value="MS" ${fuelFilter==='MS'?'selected':''}>MS • Petrol</option>
               <option value="HSD" ${fuelFilter==='HSD'?'selected':''}>HSD • Diesel</option>
             </select>
           </div>
-        </div>
 
-        <button id="applyBtn" style="margin-top:12px;width:100%;min-height:48px;border-radius:12px;background:#111;color:white;border:none;font-weight:700;font-size:14px">Show Reports • ${filteredShifts.length} shifts</button>
-        ${employeeFilter!=='all' || fuelFilter!=='all' || fromDate!==weekStr ? `<div style="margin-top:8px;text-align:center;font-size:11px;color:#6b7280">📅 ${fromDate} → ${toDate} • 👤 ${employeeFilter==='all'?'All': employeesList.find(e=>(e.uid||e.id)===employeeFilter)?.name||employeeFilter} • ⛽ ${fuelFilter}</div>` : ''}
-      </div>
-
-      <!-- Summary minimal -->
-      <div style="margin-top:14px;display:flex;gap:8px">
-        <div style="flex:1;background:white;border-radius:14px;padding:12px;border:1px solid #e5e7eb;text-align:center">
-          <div style="font-size:10px;color:#6b7280;letter-spacing:0.5px;font-weight:600">TOTAL SHIFTS</div>
-          <div style="font-size:22px;font-weight:800;margin-top:2px">${filteredShifts.length}</div>
-        </div>
-        <div style="flex:1.6;background:white;border-radius:14px;padding:12px;border:1px solid #e5e7eb">
-          <div style="font-size:10px;color:#6b7280;letter-spacing:0.5px;font-weight:600;text-align:center">FUEL SOLD</div>
-          <div style="display:flex;justify-content:center;gap:14px;margin-top:6px">
-            <div style="text-align:center"><div style="font-size:10px;color:#6b7280">MS</div><div style="font-weight:800;font-size:14px">${fmtLit(msLiters)}</div></div>
-            <div style="width:1px;background:#e5e7eb"></div>
-            <div style="text-align:center"><div style="font-size:10px;color:#6b7280">HSD</div><div style="font-weight:800;font-size:14px">${fmtLit(hsdLiters)}</div></div>
-            <div style="width:1px;background:#e5e7eb"></div>
-            <div style="text-align:center"><div style="font-size:10px;color:#6b7280">TOTAL</div><div style="font-weight:800;font-size:14px">${fmtLit(totalLiters)}</div></div>
-          </div>
+          <button id="applyBtn" style="margin-top:12px;width:100%;min-height:46px;border-radius:12px;background:#111;color:white;border:none;font-weight:700;font-size:13px">Show • ${filteredShifts.length} reports • ${fmtLit(totalLiters)}</button>
         </div>
       </div>
 
-      <!-- Reports List - Grouped by date -->
+      <!-- Reports list - only who worked which pump which date -->
       <div style="margin-top:16px">
+        <div style="padding:0 4px 8px 4px;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:12px;font-weight:800;letter-spacing:0.5px">REPORTS • WHO WORKED WHICH PUMP WHICH DATE</div>
+          <button id="exportBtn" style="min-height:28px;padding:0 10px;border-radius:20px;background:white;border:1px solid #e5e7eb;font-size:11px;font-weight:600">⬇️ CSV</button>
+        </div>
+
         ${filteredShifts.length===0 ? `
-          <div style="background:white;border-radius:18px;padding:32px 16px;text-align:center;border:1px solid #e5e7eb">
-            <div style="font-size:36px">📭</div>
-            <div style="font-weight:700;margin-top:8px">No reports</div>
-            <div style="font-size:12px;color:#6b7280;margin-top:4px">No shifts for this filter<br>Try Today / All / different employee</div>
+          <div style="background:white;border-radius:20px;padding:36px 16px;text-align:center;border:1px solid #e5e7eb">
+            <div style="font-size:40px">📋</div>
+            <div style="font-weight:800;margin-top:8px;font-size:14px">No reports found</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.4">No shifts for<br>📅 ${fromDate} → ${toDate}<br>👤 ${employeeFilter} • ⛽ ${fuelFilter}<br><br>Try All / different filter</div>
           </div>
         ` : datesSorted.map(dateKey=>{
           const shiftsForDate = grouped[dateKey];
           const dayLiters = shiftsForDate.reduce((s,x)=> s + (x.totals?.totalLiters||0),0);
+          const dayMs = shiftsForDate.reduce((s,x)=> s + (x.nozzles||[]).filter(n=> (n.fuelType||'').toLowerCase().includes('petrol')|| (n.fuelType||'').toLowerCase().includes('ms')).reduce((a,n)=>a+(n.litersSold||0),0),0);
+          const dayHsd = shiftsForDate.reduce((s,x)=> s + (x.nozzles||[]).filter(n=> (n.fuelType||'').toLowerCase().includes('diesel')|| (n.fuelType||'').toLowerCase().includes('hsd')).reduce((a,n)=>a+(n.litersSold||0),0),0);
           return `
-          <div style="margin-bottom:18px">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px 4px">
-              <div style="font-size:13px;font-weight:800">📅 ${fmtDateLong(dateKey)}</div>
-              <div style="font-size:11px;color:#6b7280;background:white;border:1px solid #e5e7eb;padding:3px 8px;border-radius:20px">${shiftsForDate.length} shifts • ${fmtLit(dayLiters)}</div>
+          <div style="margin-bottom:16px">
+            <!-- Date header sticky style -->
+            <div style="position:sticky;top:0;z-index:1;background:#f6f7f8;padding:6px 4px;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <div style="font-size:12px;font-weight:800">📅 ${fmtDateLong(dateKey)}</div>
+              <div style="font-size:11px;color:#6b7280;background:white;border:1px solid #e5e7eb;padding:2px 8px;border-radius:20px">${shiftsForDate.length} • ${fmtLit(dayMs)} MS • ${fmtLit(dayHsd)} HSD • ${fmtLit(dayLiters)}</div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              ${shiftsForDate.map(s=>{
+            <div style="background:white;border-radius:20px;border:1px solid #e5e7eb;overflow:hidden">
+              ${shiftsForDate.map((s,i)=>{
                 const time = fmtTime(s.startTime);
                 const liters = s.totals?.totalLiters||0;
                 const nozzles = s.nozzles||[];
-                // Build pump summary: Pump name • MS/HSD • liters
-                const pumpLines = nozzles.map(n=>{
+                const pumpsLine = nozzles.map(n=>{
                   const pump = pumps.find(p=>p.id===n.pumpId);
                   const ft = (n.fuelType||'').toLowerCase();
-                  const label = ft.includes('petrol')||ft.includes('ms') ? 'MS' : ft.includes('diesel')||ft.includes('hsd') ? 'HSD' : (n.fuelType||'Fuel');
+                  const label = ft.includes('petrol')||ft.includes('ms') ? 'MS' : ft.includes('diesel')||ft.includes('hsd') ? 'HSD' : (n.fuelType||'').slice(0,3);
                   const color = label==='MS' ? '#1677ff' : label==='HSD' ? '#fa8c16' : '#111';
-                  return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:600;margin:2px 4px 2px 0">
-                    <span style="width:6px;height:6px;border-radius:50%;background:${color};display:inline-block"></span>
-                    ${pump?.name||'Pump'} • <span style="color:${color}">${label}</span> • ${fmtLit(n.litersSold||0)}
-                  </span>`;
+                  return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f9fafb;border:1px solid #eee;border-radius:8px;padding:3px 7px;font-size:11px;font-weight:600;margin:2px 4px 2px 0"><span style="width:5px;height:5px;border-radius:50%;background:${color}"></span>${pump?.name||'Pump'} • ${label} • ${fmtLit(n.litersSold||0)}</span>`;
                 }).join('');
-                const statusDot = s.status==='APPROVED' ? '#22c55e' : s.status==='PENDING_REVIEW' ? '#f59e0b' : s.status==='REJECTED' ? '#ef4444' : '#6b7280';
                 return `
-                <div onclick="location.hash='#/shifts/${s.id}'" style="background:white;border-radius:16px;padding:12px 14px;border:1px solid #e5e7eb;cursor:pointer;display:flex;gap:10px;align-items:flex-start">
-                  <div style="width:36px;height:36px;border-radius:50%;background:#111;color:white;display:grid;place-items:center;font-weight:800;font-size:13px;flex-shrink:0">${(s.employeeName||'?')[0]}</div>
+                <div onclick="location.hash='#/shifts/${s.id}'" style="padding:12px 14px;display:flex;gap:10px;align-items:flex-start;cursor:pointer;${i!==shiftsForDate.length-1?'border-bottom:1px solid #f0f0f0':''}">
+                  <div style="width:32px;height:32px;border-radius:50%;background:#111;color:white;display:grid;place-items:center;font-weight:800;font-size:12px;flex-shrink:0;margin-top:1px">${(s.employeeName||'?')[0]}</div>
                   <div style="flex:1;min-width:0">
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                    <div style="display:flex;justify-content:space-between;gap:8px">
                       <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.employeeName}</div>
-                      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                        <span style="font-size:11px;color:#6b7280">⏰ ${time}</span>
-                        <span style="width:8px;height:8px;border-radius:50%;background:${statusDot};display:inline-block"></span>
-                      </div>
+                      <div style="font-size:11px;color:#6b7280;flex-shrink:0">⏰ ${time} • ${fmtLit(liters)}</div>
                     </div>
-                    <div style="margin-top:6px;display:flex;flex-wrap:wrap">${pumpLines || `<span style="font-size:11px;color:#6b7280">No pump data</span>`}</div>
-                    <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center">
-                      <span style="font-size:11px;color:#6b7280">Which pump • which date • fuel</span>
-                      <span style="font-size:12px;font-weight:700;background:#f9fafb;border:1px solid #e5e7eb;padding:2px 8px;border-radius:20px">${fmtLit(liters)} • ${nozzles.length} pump${nozzles.length>1?'s':''}</span>
-                    </div>
+                    <div style="margin-top:5px;display:flex;flex-wrap:wrap">${pumpsLine || `<span style="font-size:11px;color:#9ca3af">No pump</span>`}</div>
+                    <div style="margin-top:4px;font-size:10px;color:#9ca3af">Who worked • Which pump • Which date • Fuel</div>
                   </div>
+                  <div style="color:#d1d5db;font-size:14px;margin-top:6px">›</div>
                 </div>
                 `;
               }).join('')}
@@ -239,18 +205,13 @@ export async function reportsView({ root, query }) {
         }).join('')}
       </div>
 
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <button id="exportBtn" style="flex:1;min-height:44px;border-radius:12px;background:white;border:1.5px solid #e5e7eb;font-weight:700;font-size:13px">⬇️ Export CSV</button>
-        <button onclick="location.hash='#/dashboard'" style="flex:1;min-height:44px;border-radius:12px;background:#f9fafb;border:1.5px solid #e5e7eb;font-weight:600;font-size:13px">← Home</button>
-      </div>
-
-      <div style="margin-top:14px;padding:12px;background:#f9fafb;border-radius:12px;border:1px solid #e5e7eb;font-size:11px;color:#6b7280;line-height:1.5">
-        <b style="color:#111">How to read:</b> Each row = who worked, on which pump, which date, which fuel, how many liters. Tap any row to see full receipt. Filter by Date, Employee, Fuel Type (MS/HSD) above.
+      <div style="margin-top:12px;padding:12px 14px;background:white;border-radius:16px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:11px;color:#6b7280"><b style="color:#111">${filteredShifts.length} reports</b> • Tap to view receipt • Filter by Date, Employee, Fuel</div>
+        <button onclick="location.hash='#/dashboard'" style="min-height:32px;padding:0 12px;border-radius:20px;background:#f9fafb;border:1px solid #e5e7eb;font-size:11px;font-weight:600">Home</button>
       </div>
     </div>
   `;
 
-  // Handlers
   root.querySelectorAll('.date-pill').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const from = btn.dataset.from;
@@ -273,7 +234,7 @@ export async function reportsView({ root, query }) {
   });
 
   root.querySelector('#exportBtn')?.addEventListener('click', ()=>{
-    let csv = `Date,Employee,Pump,Fuel Type,MS/HSD,Liters\\n`;
+    let csv = `Date,Employee,Pump,Fuel,MS/HSD,Liters\\n`;
     filteredShifts.forEach(s=>{
       const date = new Date(s.startTime).toLocaleDateString('en-IN');
       (s.nozzles||[]).forEach(n=>{
@@ -285,10 +246,10 @@ export async function reportsView({ root, query }) {
     });
     const blob = new Blob([csv], { type:'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download=`reports-${fromDate}-${toDate}-${fuelFilter}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href=url; a.download=`reports-${fromDate}-${toDate}.csv`; a.click(); URL.revokeObjectURL(url);
   });
 }
 
 export async function auditView({ root }) {
-  root.innerHTML = `<div class="container" style="max-width:520px;margin:0 auto"><h1 style="font-size:22px;font-weight:800">Removed</h1><p style="font-size:12px;color:#6b7280;margin-top:6px">Only owner can destroy data.</p><button style="margin-top:12px;min-height:44px;border-radius:12px;background:#111;color:white;border:none;padding:0 16px;font-weight:600" onclick="location.hash='#/reports'">Back to Reports</button></div>`;
+  root.innerHTML = `<div class="container" style="max-width:540px;margin:0 auto"><div style="background:white;border-radius:16px;padding:20px;border:1px solid #e5e7eb"><h1 style="font-size:20px;font-weight:800">Removed</h1><p style="font-size:12px;color:#6b7280;margin-top:6px">Only owner can destroy data.</p><button style="margin-top:12px;min-height:40px;border-radius:12px;background:#111;color:white;border:none;padding:0 14px;font-weight:600" onclick="location.hash='#/reports'">Back</button></div></div>`;
 }
