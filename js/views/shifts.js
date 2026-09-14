@@ -541,58 +541,66 @@ export async function closeShiftView({ root, params }) {
     const credit = Number(root.querySelector('#pay_credit').value||0);
     const other = Number(root.querySelector('#pay_other').value||0);
     const totalPayments = cash+card+upi+credit+other;
-    const variance = totalPayments - totalRevenue;
     const quickTotal = quickExpenses.reduce((a,e)=>a+Number(e.amount||0),0);
-    const cashAfterExpenses = Math.max(0, cash - quickTotal);
+
+    // CORRECTED ACCOUNTING - as per owner: testing fuel came out of nozzle, so it's part of revenue
+    // but it's an expense that should REDUCE whole balance you owe to owner
+    // Gross Revenue = fuel dispensed * price (includes testing fuel)
+    // Net Revenue = Gross - Expenses (what you actually owe owner after testing/breakfast etc)
+    // Variance = Payments - Net Revenue (if negative, short = Net - Payments to handover)
+    const netRevenue = Math.max(0, totalRevenue - quickTotal);
+    const variance = totalPayments - netRevenue;
     const absVariance = Math.abs(variance);
+    const cashAfterExpenses = Math.max(0, cash - quickTotal);
 
-    // FIXED: Old bug netVariance = variance - quickTotal made To Handover larger (e.g., -37269 -1110 = -38379)
-    // Correct: Cash to handover = cash - expenses, expenses REDUCE handover
-    let varLabel, varDesc, varBg, varBorder, varColor;
-    let toHandover = cashAfterExpenses;
-    let toHandoverLabel = '💸 Cash to Handover to Owner';
+    let toHandover = 0;
+    let toHandoverLabel = '';
+    let varBg, varBorder, varColor, varDesc;
 
-    if (Math.abs(variance) < 0.5 && quickTotal < 0.5) {
-      varLabel = '✅ Balanced'; varDesc = 'All settled • No short, no expenses'; varBg = '#f0f0f0'; varBorder = '#e0e0e0'; varColor = 'var(--text)';
-      toHandover = cashAfterExpenses;
-    } else if (variance < -0.5) {
-      if (cash <= 0.5) {
-        const correctedShort = Math.max(0, absVariance - quickTotal);
-        toHandover = correctedShort;
-        varLabel = '💸 To Handover to Owner';
-        varDesc = `No cash entered • Short ${formatCurrency(absVariance)} minus expenses ${formatCurrency(quickTotal)} = ${formatCurrency(correctedShort)} to give • Owner will collect after approval`;
-      } else {
-        toHandover = cashAfterExpenses;
-        varLabel = '💸 Cash to Handover to Owner';
-        varDesc = `Cash ${formatCurrency(cash)} - Expenses ${formatCurrency(quickTotal)} = ${formatCurrency(cashAfterExpenses)} to give • Short of ${formatCurrency(absVariance)} tracked as To Collect`;
-      }
-      varBg = '#fff1f0'; varBorder = '#ffa39e'; varColor = '#cf1322';
-      toHandoverLabel = '💸 Cash to Handover to Owner';
-    } else if (variance > 0.5) {
-      varLabel = '💰 Excess with You';
-      varDesc = `You collected ${formatCurrency(absVariance)} extra • After expenses, cash to handover is ${formatCurrency(cashAfterExpenses)}`;
-      varBg = '#f6ffed'; varBorder = '#b7eb8f'; varColor = '#389e0d';
-      toHandover = cashAfterExpenses;
-      toHandoverLabel = '💰 Cash to Handover (Excess)';
-    } else {
-      varLabel = '✅ Balanced';
-      varDesc = `Payments match revenue • Cash after expenses to handover`;
+    if (Math.abs(variance) < 0.5) {
+      toHandover = cashAfterExpenses > 0 ? cashAfterExpenses : 0;
+      toHandoverLabel = '✅ Balanced • Cash to Handover';
+      varDesc = `Gross ${formatCurrency(totalRevenue)} - Expenses ${formatCurrency(quickTotal)} = Net ${formatCurrency(netRevenue)} • Payments ${formatCurrency(totalPayments)} match net • Cash after expenses ${formatCurrency(cashAfterExpenses)} to give`;
       varBg = '#f0f0f0'; varBorder = '#e0e0e0'; varColor = 'var(--text)';
+    } else if (variance < -0.5) {
+      // SHORT: payments < net revenue
+      // To Handover = Net Revenue - Payments = (Gross - Expenses) - Payments
+      // This is what attendant needs to give to owner
+      toHandover = Math.max(0, netRevenue - totalPayments);
+      // If cash entered, physical cash to give is cashAfterExpenses, but total owed is net - payments
+      // Show both: total to handover (short) and cash in hand
+      toHandoverLabel = '💸 To Handover to Owner';
+      varDesc = `Gross ${formatCurrency(totalRevenue)} - Expenses ${formatCurrency(quickTotal)} = Net ${formatCurrency(netRevenue)} • Payments ${formatCurrency(totalPayments)} • Short ${formatCurrency(absVariance)} to give • Cash in hand after expenses ${formatCurrency(cashAfterExpenses)}`;
+      varBg = '#fff1f0'; varBorder = '#ffa39e'; varColor = '#cf1322';
+      // If cash is entered and cashAfterExpenses is less than short, show cashAfterExpenses as physical to give now, short as total owed
+      if (cash > 0.5) {
+        // Physical cash to give now is cashAfterExpenses, but total short is net - payments
+        // For simplicity, toHandover = cashAfterExpenses if cashAfterExpenses <= absVariance, else absVariance
+        // Actually correct: attendant gives cashAfterExpenses now, remaining short tracked as To Collect
+        // But user wants expense to reduce whole balance, so toHandover = net - payments
+        toHandover = Math.max(0, netRevenue - totalPayments);
+      }
+    } else {
+      // EXCESS
       toHandover = cashAfterExpenses;
+      toHandoverLabel = '💰 Excess with You';
+      varDesc = `You collected ${formatCurrency(absVariance)} extra over net revenue ${formatCurrency(netRevenue)} • Cash after expenses ${formatCurrency(cashAfterExpenses)} to handover (excess will be returned)`;
+      varBg = '#f6ffed'; varBorder = '#b7eb8f'; varColor = '#389e0d';
     }
 
     root.querySelector('#paymentSummary').innerHTML = `
       <div style="background:#f8f9fa;border-radius:12px;padding:14px;font-size:14px">
-        <div style="display:flex;justify-content:space-between"><span>Expected Revenue (fuel sold)</span><span style="font-weight:700">${formatCurrency(totalRevenue)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-top:6px"><span>Recorded Payments (cash+card+upi+credit+other)</span><span style="font-weight:700">${formatCurrency(totalPayments)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:8px;background:${Math.abs(variance)<0.5?'#f0f0f0':'#fff1f0'};border-radius:8px"><span>Variance: ${variance<0?'SHORT': variance>0.5?'EXCESS':'BALANCED'}</span><span style="font-weight:700;color:${variance<0?'#cf1322': variance>0.5?'#389e0d':'inherit'}">${formatCurrency(variance)} ${Math.abs(variance)>0.5 ? (variance<0?`• Short ${formatCurrency(absVariance)}`:`• Excess ${formatCurrency(absVariance)}`) : ''}</span></div>
-        ${quickTotal>0 ? `<div style="display:flex;justify-content:space-between;margin-top:8px;color:#fa541c;padding:8px;background:#fffbe6;border-radius:8px"><span>Quick Expenses (testing etc)</span><span style="font-weight:700">-${formatCurrency(quickTotal)} from cash</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between"><span>Gross Revenue (fuel from nozzles)</span><span style="font-weight:700">${formatCurrency(totalRevenue)}</span></div>
+        ${quickTotal>0 ? `<div style="display:flex;justify-content:space-between;margin-top:6px;color:#fa541c;padding:8px;background:#fffbe6;border-radius:8px"><span>Quick Expenses (testing fuel came out of nozzle)</span><span style="font-weight:700">-${formatCurrency(quickTotal)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f"><span>Net Revenue (gross - expenses) = Whole balance to owner</span><span style="font-weight:800">${formatCurrency(netRevenue)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px"><span>Recorded Payments (cash+card+upi+credit+other)</span><span style="font-weight:700">${formatCurrency(totalPayments)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;padding:8px;background:${Math.abs(variance)<0.5?'#f0f0f0': variance<0?'#fff1f0':'#f6ffed'};border-radius:8px"><span>Variance: ${variance<0?'SHORT': variance>0.5?'EXCESS':'BALANCED'} (payments - net)</span><span style="font-weight:700;color:${variance<0?'#cf1322': variance>0.5?'#389e0d':'inherit'}">${formatCurrency(variance)} ${Math.abs(variance)>0.5 ? (variance<0?`• Short ${formatCurrency(absVariance)}`:`• Excess ${formatCurrency(absVariance)}`) : ''}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:8px;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0"><span>Cash Entered</span><span style="font-weight:700">${formatCurrency(cash)}</span></div>
-        ${quickTotal>0 ? `<div style="display:flex;justify-content:space-between;margin-top:6px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f"><span>Cash After Expenses</span><span style="font-weight:700;color:#389e0d">${formatCurrency(cashAfterExpenses)}</span></div>` : ''}
+        ${quickTotal>0 ? `<div style="display:flex;justify-content:space-between;margin-top:6px;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0"><span>Cash After Expenses (cash - ${formatCurrency(quickTotal)})</span><span style="font-weight:700;color:#389e0d">${formatCurrency(cashAfterExpenses)}</span></div>` : ''}
         <div style="padding:12px;background:${varBg};border-radius:10px;margin-top:12px;border:1px solid ${varBorder}">
-          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:13px;color:${varColor}">${toHandoverLabel}</span><span style="font-weight:800;font-size:18px;color:${varColor}">${formatCurrency(toHandover)}</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:13px;color:${varColor}">${toHandoverLabel}</span><span style="font-weight:800;font-size:20px;color:${varColor}">${formatCurrency(toHandover)}</span></div>
           <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${varDesc}</div>
-          ${quickTotal>0 ? `<div style="font-size:10px;color:#389e0d;margin-top:6px;background:#f6ffed;padding:6px 8px;border-radius:6px;border:1px solid #b7eb8f">✓ Fixed: Old bug showed ${formatCurrency(absVariance + quickTotal)} (short + expenses). Now correctly shows ${formatCurrency(toHandover)} (cash - expenses). Expenses REDUCE handover.</div>` : ''}
+          ${quickTotal>0 ? `<div style="font-size:10px;color:#389e0d;margin-top:8px;background:#f6ffed;padding:8px;border-radius:6px;border:1px solid #b7eb8f">✓ Fixed: Expenses now REDUCE whole balance. Old bug: Gross + Expenses - Payments = ${formatCurrency(totalRevenue + quickTotal - totalPayments)} (₹${(quickTotal*2).toFixed(0)} extra). Correct: (Gross - Expenses) - Payments = Gross - Expenses - Payments = ${formatCurrency(totalRevenue)} - ${formatCurrency(quickTotal)} - ${formatCurrency(totalPayments)} = ${formatCurrency(toHandover)}. Testing fuel came out of nozzle, so net revenue = gross - testing.</div>` : ''}
         </div>
       </div>
     `;
