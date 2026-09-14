@@ -63,6 +63,9 @@ export function calcVariance(expected, actual) {
   return { variance: v, status };
 }
 
+// Display-only. The `|| 0` here is deliberate and safe: it renders legacy or
+// missing values as ₹0.00 rather than crashing a report. Input validation
+// happens in money.js, before anything is ever stored.
 export function formatCurrency(n) {
   const num = Number(n)||0;
   return '₹' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
