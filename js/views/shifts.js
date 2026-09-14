@@ -227,7 +227,11 @@ export async function shiftDetailView({ root, params }) {
                 <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px"><div style="font-weight:700;font-size:15px">${formatCurrency(n.revenue||0)}</div>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="nozzle" data-target="${n.nozzleId}" data-field="closingReading" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;font-weight:600;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>
               </div>
             `}).join('')}
-            <div style="display:flex;justify-content:space-between;padding:16px 0;font-weight:800;font-size:17px;border-bottom:2px solid #232f3e;margin-top:6px"><span>Total Fuel Sales</span><span>${formatCurrency(t.totalRevenue||0)}</span></div>
+            <div style="margin-top:6px;border:1.5px solid #e0e0e0;border-radius:12px;overflow:hidden">
+              <div style="display:flex;justify-content:space-between;padding:12px 16px;background:#f8f9fa;font-weight:600;font-size:14px"><span>Gross Fuel Sales (from nozzles)</span><span>${formatCurrency(t.totalRevenue||0)}</span></div>
+              ${totalExpenses>0.5 ? `<div style="display:flex;justify-content:space-between;padding:10px 16px;background:#fffbe6;font-size:13px;color:#ad6800;border-top:1px solid #ffe58f"><span>🧪 Less: Testing/Expenses (fuel came out of nozzle)</span><span style="font-weight:700;color:#fa541c">-${formatCurrency(totalExpenses)}</span></div>` : ''}
+              ${totalExpenses>0.5 ? `<div style="display:flex;justify-content:space-between;padding:14px 16px;background:#f6ffed;font-weight:800;font-size:16px;border-top:1.5px solid #b7eb8f;color:#389e0d"><span>Net Fuel Sales (whole amount to owner)</span><span>${formatCurrency(Math.max(0,(t.totalRevenue||0)-totalExpenses))}</span></div>` : `<div style="display:flex;justify-content:space-between;padding:14px 16px;background:#e6f4ff;font-weight:800;font-size:17px;border-top:2px solid #232f3e"><span>Total Fuel Sales</span><span>${formatCurrency(t.totalRevenue||0)}</span></div>`}
+            </div>
             <div style="margin-top:18px">
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center"><span>Payments Received</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="payment" data-field="payments" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;font-weight:600;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag Payment</button>` : ''}</div>
               <div style="background:#f8f9fa;border-radius:12px;padding:14px">
@@ -243,28 +247,35 @@ export async function shiftDetailView({ root, params }) {
                   </div>
                 `).join('') || `<div style="font-size:13px;color:var(--text-secondary);text-align:center;padding:10px">No payments recorded</div>`}
                 <div style="height:1px;background:#e0e0e0;margin:10px 0"></div>
-                <div style="display:flex;justify-content:space-between;font-size:14px"><span style="color:var(--text-secondary)">Recorded</span><span style="font-weight:600">${formatCurrency(t.totalPayments||0)}</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px"><span style="color:var(--text-secondary)">Expected</span><span style="font-weight:600">${formatCurrency(t.totalRevenue||0)}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:14px"><span style="color:var(--text-secondary)">Recorded Payments</span><span style="font-weight:600">${formatCurrency(t.totalPayments||0)}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px"><span style="color:var(--text-secondary)">Gross Expected</span><span style="font-weight:600">${formatCurrency(t.totalRevenue||0)}</span></div>
+                ${totalExpenses>0.5 ? `<div style="display:flex;justify-content:space-between;font-size:13px;margin-top:6px;padding:8px;background:#fffbe6;border-radius:8px;border:1px solid #ffe58f"><span style="color:#ad6800">Less: Expenses (testing)</span><span style="font-weight:700;color:#fa541c">-${formatCurrency(totalExpenses)}</span></div>` : ''}
+                <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px;padding:10px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f;font-weight:700"><span style="color:#389e0d">Net Expected (whole amount to owner)</span><span style="font-weight:800;color:#389e0d">${formatCurrency(Math.max(0,(t.totalRevenue||0)-totalExpenses))}</span></div>
                 ${(() => {
-                  const v = t.variance||0;
-                  const absV = Math.abs(v);
-                  let label, desc, bg, border, color;
-                  if (absV < 0.5) {
-                    label = '✅ Balanced'; desc = 'All settled'; bg = '#f0f0f0'; border = '#e0e0e0'; color = 'var(--text)';
-                  } else if (v < 0) {
+                  const gross = t.totalRevenue||0;
+                  const net = Math.max(0, gross - totalExpenses);
+                  const paid = t.totalPayments||0;
+                  const netVariance = paid - net;
+                  const absNet = Math.abs(netVariance);
+                  let label, desc, bg, border, color, amount;
+                  if (absNet < 0.5) {
+                    label = '✅ Balanced'; desc = `Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)} = Net ${formatCurrency(net)} • Payments ${formatCurrency(paid)} match • All settled`; bg = '#f0f0f0'; border = '#e0e0e0'; color = 'var(--text)'; amount = 0;
+                  } else if (netVariance < -0.5) {
+                    amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💸 To Handover to Owner'; desc = `You need to give ${formatCurrency(absV)} to owner • Owner will collect after approval`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = '💸 To Handover to Owner'; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to give • Owner will collect after approval • Testing reduces whole balance`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     } else {
-                      label = `💰 To Collect from ${shift.employeeName}`; desc = `Collect ${formatCurrency(absV)} from ${shift.employeeName} after approval`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = `💰 To Collect from ${shift.employeeName}`; desc = `Net ${formatCurrency(net)} - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to collect from ${shift.employeeName} after approval • Expenses reduce whole amount`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     }
                   } else {
+                    amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💰 Excess with You'; desc = `You collected ${formatCurrency(absV)} extra • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                      label = '💰 Excess with You'; desc = `You collected ${formatCurrency(absNet)} extra over net ${formatCurrency(net)} • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     } else {
-                      label = `↩️ Excess to Return to ${shift.employeeName}`; desc = `Return ${formatCurrency(absV)} to ${shift.employeeName}`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                      label = `↩️ Excess to Return to ${shift.employeeName}`; desc = `Return ${formatCurrency(absNet)} to ${shift.employeeName} • Net ${formatCurrency(net)}`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     }
                   }
-                  return `<div style="padding:12px;background:${bg};border-radius:10px;margin-top:12px;border:1px solid ${border}"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:13px;color:${color}">${label}</span><span style="font-weight:800;font-size:15px;color:${color}">${formatCurrency(absV)}</span></div><div style="font-size:10px;color:var(--text-secondary);margin-top:4px">${desc}</div></div>`;
+                  return `<div style="padding:14px;background:${bg};border-radius:12px;margin-top:14px;border:1.5px solid ${border}"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:800;font-size:14px;color:${color}">${label}</span><span style="font-weight:800;font-size:18px;color:${color}">${formatCurrency(amount)}</span></div><div style="font-size:11px;color:var(--text-secondary);margin-top:6px;line-height:1.4">${desc}</div>${totalExpenses>0.5 ? `<div style="margin-top:8px;padding:8px;background:white;border-radius:8px;border:1px solid ${border};font-size:10px"><span style="color:#389e0d;font-weight:700">✓ Color coding: Gross (gray) - Expenses (orange -${formatCurrency(totalExpenses)}) = Net (green ${formatCurrency(net)}) • To Handover = Net - Payments = ${formatCurrency(net)} - ${formatCurrency(paid)} = ${formatCurrency(amount)}</span></div>` : ''}</div>`;
                 })()}
               </div>
             </div>

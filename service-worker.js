@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v29-logo-pumps-human-kind-20260913';
+const CACHE_NAME = 'fuelops-v30-fix-receipt-expenses-minus-fuel-sale-20260913';
 const APP_SHELL = [
   './',
   './index.html',
