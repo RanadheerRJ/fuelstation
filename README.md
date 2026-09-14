@@ -123,39 +123,128 @@ fuelops/
 └── assets/icons/
 ```
 
-## 🔐 Security Notes
+## 🔐 Security
 
-- PIN is **never stored plain** in Firestore in production. Firebase Auth holds password hash.
-  - Demo mode stores obfuscated PIN locally only for convenience, clearly separated.
-- Firestore rules enforce:
-  - Users only access their stations
-  - Attendants only own shifts
-  - Approved shifts locked
-  - Price history append-only
-  - No role escalation
-- Phone → Email mapping: `+91XXXXXXXXXX` → `+91XXXXXXXXXX@fuelops.app`
-- Password derivation: `FuelOps#<PIN>#2024` (6+ chars required by Firebase, actual length 16+)
+Authorization is enforced **server-side in `firestore.rules`**. The UI hides
+controls a role cannot use, but hiding a button is never the control — every
+constraint below is also checked by the rules, which is what actually stops a
+crafted request.
 
-For higher security, you can later switch to:
-- Firebase Phone OTP for login + custom claims for role
-- Cloud Functions to hash PIN server-side
+### Permission matrix
+
+| Capability | super_admin | owner | admin | manager | attendant |
+|---|:--:|:--:|:--:|:--:|:--:|
+| Read data across **all** stations | ✅ | — | — | — | — |
+| Read data for **own** station(s) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Create / delete station | ✅ | ✅ (own) | — | — | — |
+| Edit station details | ✅ | ✅ | ✅ | — | — |
+| Create / edit employees | ✅ | ✅ | ✅ | — | — |
+| Grant `owner` role | ✅ | ✅ | — | — | — |
+| Create a `super_admin` | ✅ | — | — | — | — |
+| Change own role / stations / status | — | — | — | — | — |
+| Manage pumps & nozzles | ✅ | ✅ | ✅ | ✅ | — |
+| Update nozzle `lastReading` | ✅ | ✅ | ✅ | ✅ | ✅ (only this field) |
+| Set fuel prices | ✅ | ✅ | ✅ | ✅ | — |
+| Edit a historical price amount | — | — | — | — | — |
+| Start / close **own** shift | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Edit someone else's shift | ✅ | ✅ | ✅ | ✅ | — |
+| Approve / reject a shift | ✅ | ✅ | ✅ | ✅ | — |
+| Approve **own** shift | ✅ | — | — | — | — |
+| Edit an APPROVED shift | ✅ | ✅ | ✅ | ✅ | — |
+| Record expense / credit | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Write off a credit | ✅ | ✅ | ✅ | — | — |
+| Read audit logs | ✅ | ✅ | ✅ | ✅ | — |
+| Modify / delete audit logs | — | — | — | — | — |
+
+### Station isolation
+
+Access is derived from `users/{uid}.stationIds` (plus `stations/{id}.ownerId`
+for owners). A client cannot widen its access by sending a different
+`stationId` in a payload, and a document cannot be moved between stations.
+
+### Other guarantees
+
+- PIN is **never stored plain** in Firestore in production; Firebase Auth holds
+  the password hash. Demo mode stores an obfuscated PIN locally only.
+- Deactivated accounts (`status != 'active'`) keep their Auth credentials but
+  are refused at login and by every rule.
+- Price history is append-only: only `effectiveTo` may be stamped, and price
+  documents cannot be deleted.
+- Audit logs are append-only and cannot be edited or deleted by anyone.
+- Nozzle assignment uses a transactional lock (`nozzleLocks/{nozzleId}`) so one
+  nozzle cannot be in two active shifts.
+- A Firebase failure is a **hard error**. The app never silently falls back to
+  local storage — see "Demo mode" below.
+- Phone → Email mapping: `XXXXXXXXXX` → `XXXXXXXXXX@fuelops.app`
+- Password derivation: `FuelOps#<PIN>#2024`
+  (**do not change** — these derive existing users' real Firebase credentials)
+
+### Deploying the rules
+
+```bash
+npx firebase deploy --only firestore:indexes --project fuelops-a93f6
+npx firebase deploy --only firestore:rules   --project fuelops-a93f6
+```
+
+Deploy the indexes **first**: the app issues composite queries that fail
+without them. A rules test suite lives in `tests/firestore-rules.test.mjs`
+(see `tests/README.md`).
+
+### Known gaps
+
+- Financial totals are still computed on the client and written by the client.
+  The rules prevent an attendant editing them *after approval*, but a crafted
+  request could still submit inconsistent totals for review. Closing this fully
+  requires a Cloud Function or server-side recompute — deliberately not added
+  here, as it changes the deployment model.
+- Money is stored as floating-point rupees rounded to 2 dp at a single choke
+  point (`services/money.js`). Integer paise would be structurally safer but
+  requires migrating existing documents.
+
+### Demo mode
+
+Demo mode is entered **only** when `js/firebase-config.js` is explicitly
+configured for it. It is a local-storage sandbox with no server enforcement,
+intended for evaluation. If a configured Firebase project cannot be reached the
+app shows a blocking error rather than quietly switching to local data.
 
 ## 📱 PWA
 
 - `manifest.json` with relative scope
-- `service-worker.js` caches app shell, skips Firebase requests
-- Offline banner shows when offline
+- `service-worker.js` caches the app shell (HTML/CSS/JS/icons) and skips
+  Firebase requests
+- Offline banner shows when the device is offline
 - Installable on mobile via "Add to Home Screen"
+
+**There is no offline data sync.** The shell is cached so the app opens without
+a network, but reads and writes require Firebase. Work entered while offline is
+not queued and will not be saved.
 
 ## 🧮 Calculations (centralized in `services/calc.js`)
 
 ```
-litersSold = closingReading - openingReading
-fuelRevenue = litersSold × applicablePrice (price active at shift start)
-totalExpected = sum(all fuel revenue)
-totalPayments = cash + card + upi + credit + other
-variance = totalPayments - totalExpected
+litersSold     = closingReading - openingReading      (closing >= opening enforced)
+fuelRevenue    = litersSold x applicablePrice
+grossRevenue   = sum(all fuel revenue)
+totalExpenses  = sum(expenses recorded against the shift)
+netRevenue     = grossRevenue - totalExpenses          <- what the attendant owes
+totalPayments  = cash + card + upi + credit + other
+variance       = totalPayments - netRevenue            (BALANCED within +/- 0.50)
 ```
+
+`applicablePrice` is the price effective when that nozzle **started
+dispensing** — the shift start time, or the nozzle's own `addedAt` if it was
+added mid-shift. Each nozzle stores `price`, `priceId` and `priceEffectiveAt`,
+so historical revenue stays explainable after the price changes again.
+
+Rounding is centralised in `services/money.js` (`roundMoney` to 2 dp,
+`roundLiters` to 3 dp). Non-numeric input is **rejected**, never coerced to 0.
+
+### Dates
+
+All day bucketing uses the business timezone **Asia/Kolkata** via
+`services/datetime.js`. Never use `toISOString().slice(0,10)`: it returns a UTC
+date, so between 00:00 and 05:30 IST it reports the previous day.
 
 ## ✅ Definition of Done Checklist
 
@@ -172,7 +261,8 @@ variance = totalPayments - totalExpected
 - [x] Payment breakdown & variance
 - [x] Submit shift → pending review
 - [x] Manager approve/reject
-- [x] Reports (daily, shift, credit, audit)
+- [x] Reports (daily, shift, credit)
+- [x] Audit trail (append-only `auditLogs`)
 - [x] PWA installable
 - [x] GitHub Pages deployable
 - [x] Firebase storage + security rules
@@ -183,7 +273,7 @@ variance = totalPayments - totalExpected
 - Fuel delivery
 - Accounting/payroll
 - Notifications/SMS
-- Advanced offline sync
+- Offline data sync / write queue
 - Payment gateway
 
 ## 📝 Changelog - Working as Expected (Sep 2026)
