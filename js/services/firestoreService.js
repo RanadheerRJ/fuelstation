@@ -45,15 +45,20 @@ export async function getDocById(collectionName, id) {
 }
 
 export async function addDocTo(collectionName, data) {
+  // Sanitize: Firestore rejects undefined values
+  const cleanData = {};
+  Object.entries(data).forEach(([k,v])=>{
+    if (v !== undefined) cleanData[k]=v;
+  });
   if (getIsDemo()) {
-    return demo.demoAdd(collectionName, data);
+    return demo.demoAdd(collectionName, cleanData);
   }
   const mod = await loadFirestoreModule();
   const db = getDbInstance();
   const coll = mod.collection(db, collectionName);
-  const withMeta = { ...data, createdAt: mod.serverTimestamp() };
+  const withMeta = { ...cleanData, createdAt: mod.serverTimestamp() };
   const ref = await mod.addDoc(coll, withMeta);
-  return { id: ref.id, ...data };
+  return { id: ref.id, ...cleanData };
 }
 
 export async function updateDocById(collectionName, id, patch) {
