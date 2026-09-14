@@ -52,12 +52,53 @@
 
   <!-- Service Worker registration - relative scope for GitHub Pages -->
   <script>
+    // Service worker registration.
+    //
+    // Devices were getting stuck on old UI because the worker served cached
+    // code without ever consulting the network. The worker is now
+    // network-first; this side makes sure a new worker is noticed promptly
+    // and that the page reloads itself once one takes over.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        // Use relative path so scope matches GitHub Pages subpath
-        navigator.serviceWorker.register('./service-worker.js', { scope: './' })
-          .then(reg => console.log('SW registered', reg.scope))
+        navigator.serviceWorker
+          // updateViaCache:'none' stops the browser serving service-worker.js
+          // itself from its HTTP cache - otherwise a new version can go
+          // unnoticed for up to 24h.
+          .register('./service-worker.js', { scope: './', updateViaCache: 'none' })
+          .then(reg => {
+            // Check for a new version on load, when the tab regains focus,
+            // and hourly for long-lived sessions.
+            const check = () => reg.update().catch(() => {});
+            check();
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') check();
+            });
+            setInterval(check, 60 * 60 * 1000);
+
+            // If a new worker is waiting, activate it straight away.
+            const promote = (sw) => {
+              if (!sw) return;
+              sw.addEventListener('statechange', () => {
+                if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                  sw.postMessage({ type: 'SKIP_WAITING' });
+                }
+              });
+            };
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            promote(reg.installing);
+            reg.addEventListener('updatefound', () => promote(reg.installing));
+          })
           .catch(err => console.warn('SW failed', err));
+
+        // Reload once when a new worker takes control, so the user lands on
+        // the new code without being told to clear their cache. Guarded so a
+        // repeated controller change cannot loop.
+        let reloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloaded) return;
+          reloaded = true;
+          window.location.reload();
+        });
       });
     }
   </script>

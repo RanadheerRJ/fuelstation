@@ -89,8 +89,10 @@ export async function settingsView({ root }) {
           <p>FuelOps • iOS Clean • Simple • Invite Only</p>
           <p>Mode: <b>${isDemo ? 'Local Storage (Demo)' : 'Firebase Firestore Live'}</b></p>
           <p>Station: ${currentStation?.name || 'None'} • Role: ${user?.role}</p>
-          <p>Build: v18 • Owner only destroy, no audit log</p>
+          <p>Build: <b id="swVersion">checking…</b></p>
         </div>
+        <button id="forceUpdate" class="neu-btn" style="margin-top:12px;min-height:42px;border-radius:10px;font-weight:600;width:100%">🔄 Check for update</button>
+        <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">Clears the offline cache and reloads with the newest version.</p>
       </div>
 
       <div style="margin-top:20px">
@@ -98,6 +100,43 @@ export async function settingsView({ root }) {
       </div>
     </div>
   `;
+
+  // ---- Version + manual update ---------------------------------------------
+  // Ask the active service worker which build it is actually running. If the
+  // answer is missing, the page is not controlled by a worker at all.
+  const verEl = root.querySelector('#swVersion');
+  if (verEl) {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      const chan = new MessageChannel();
+      const timer = setTimeout(()=>{ verEl.textContent = 'unknown'; }, 1500);
+      chan.port1.onmessage = (e) => {
+        clearTimeout(timer);
+        if (e.data?.version) verEl.textContent = e.data.version;
+      };
+      navigator.serviceWorker.controller.postMessage({ type: 'GET_VERSION' }, [chan.port2]);
+    } else {
+      verEl.textContent = 'no offline cache';
+    }
+  }
+
+  root.querySelector('#forceUpdate')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Updating…';
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (err) {
+      console.warn('Force update failed', err);
+    }
+    // Cache-busting param defeats any intermediate HTTP cache too.
+    location.replace(location.pathname + '?u=' + Date.now() + location.hash);
+  });
 
   root.querySelector('#logoutBtn').addEventListener('click', async ()=>{
     await logout();
