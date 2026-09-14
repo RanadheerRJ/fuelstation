@@ -44,27 +44,45 @@ export async function getDocById(collectionName, id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// Firestore rejects `undefined` field values with an unhandled error.
+// Strip them so an optional field (e.g. a blank expense description) can never
+// silently break a save.
+function stripUndefined(value) {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out = {};
+    Object.entries(value).forEach(([k, v]) => {
+      if (v === undefined) return;
+      out[k] = stripUndefined(v);
+    });
+    return out;
+  }
+  return value;
+}
+
 export async function addDocTo(collectionName, data) {
+  const clean = stripUndefined(data);
   if (getIsDemo()) {
-    return demo.demoAdd(collectionName, data);
+    return demo.demoAdd(collectionName, clean);
   }
   const mod = await loadFirestoreModule();
   const db = getDbInstance();
   const coll = mod.collection(db, collectionName);
-  const withMeta = { ...data, createdAt: mod.serverTimestamp() };
+  const withMeta = { ...clean, createdAt: mod.serverTimestamp() };
   const ref = await mod.addDoc(coll, withMeta);
-  return { id: ref.id, ...data };
+  return { id: ref.id, ...clean };
 }
 
 export async function updateDocById(collectionName, id, patch) {
+  const clean = stripUndefined(patch);
   if (getIsDemo()) {
-    return demo.demoUpdate(collectionName, id, patch);
+    return demo.demoUpdate(collectionName, id, clean);
   }
   const mod = await loadFirestoreModule();
   const db = getDbInstance();
   const ref = mod.doc(db, collectionName, id);
-  await mod.updateDoc(ref, { ...patch, updatedAt: mod.serverTimestamp() });
-  return { id, ...patch };
+  await mod.updateDoc(ref, { ...clean, updatedAt: mod.serverTimestamp() });
+  return { id, ...clean };
 }
 
 export async function queryDocs(collectionName, predicate) {

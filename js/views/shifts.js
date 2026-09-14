@@ -161,13 +161,62 @@ export async function shiftDetailView({ root, params }) {
         <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Credits (${credits.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${c.customer}</span><span style="font-weight:700">${formatCurrency(c.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No credits</p>`}</div></div>
         <div class="neu-card" style="margin-top:12px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Expenses (${expenses.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${e.category}</span><span style="font-weight:700">${formatCurrency(e.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No expenses</p>`}</div></div>
       </div>
-      <div id="creditModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Credit</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('creditModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Customer</label><input id="cr_customer" class="neu-input" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount</label><input id="cr_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveCredit" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Credit</button></div></div></div>
-      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Maintenance</option><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Petty Cash</option><option>Other</option></select></div><div><label class="label">Amount</label><input id="ex_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
-      <div id="noteModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Note</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('noteModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Note</label><textarea id="note_text" class="neu-input" rows="3" style="border-radius:10px"></textarea></div><button id="saveNote" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Note</button></div></div></div>
+      <div id="creditModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Credit</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('creditModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Customer</label><input id="cr_customer" class="neu-input" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount (₹)</label><input id="cr_amount" class="neu-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" style="min-height:44px;border-radius:10px;font-size:16px;font-weight:600"></div><div id="cr_alert"></div><button id="saveCredit" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Credit</button></div></div></div>
+      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Maintenance</option><option>Petty Cash</option><option>Other</option></select></div><div><label class="label">Amount (₹)</label><input id="ex_amount" class="neu-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" style="min-height:44px;border-radius:10px;font-size:16px;font-weight:600"></div><div><label class="label">Note (optional)</label><input id="ex_desc" class="neu-input" placeholder="e.g. 2 litre testing petrol" style="min-height:44px;border-radius:10px"></div><div id="ex_alert"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
+      <div id="noteModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Note</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('noteModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Note</label><textarea id="note_text" class="neu-input" rows="3" style="border-radius:10px"></textarea></div><div id="note_alert"></div><button id="saveNote" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Note</button></div></div></div>
     `;
-    root.querySelector('#saveCredit').addEventListener('click', async ()=>{ const customer = root.querySelector('#cr_customer').value.trim(); const amount = root.querySelector('#cr_amount').value; if (!customer || !amount) return alert('Fill required'); try { await addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }); location.reload(); } catch(e){ alert(e.message); } });
-    root.querySelector('#saveExpense').addEventListener('click', async ()=>{ const category = root.querySelector('#ex_cat').value; const amount = root.querySelector('#ex_amount').value; if (!amount) return alert('Amount required'); try { await addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount }); location.reload(); } catch(e){ alert(e.message); } });
-    root.querySelector('#saveNote').addEventListener('click', async ()=>{ const text = root.querySelector('#note_text').value.trim(); if (!text) return alert('Note required'); try { await addNote({ stationId: shift.stationId, shiftId: shift.id, text }); location.reload(); } catch(e){ alert(e.message); } });
+    // Inline feedback so a failed save is never silent, and the typed values survive.
+    const showErr = (slotId, msg) => {
+      const el = root.querySelector('#' + slotId);
+      if (el) el.innerHTML = `<div class="alert alert--danger" style="font-size:12px;padding:10px;border-radius:10px">⚠️ ${msg}</div>`;
+      else alert(msg);
+    };
+    const clearErr = (slotId) => { const el = root.querySelector('#' + slotId); if (el) el.innerHTML = ''; };
+
+    // Re-render just this shift view instead of reloading the whole page, so the
+    // attendant stays exactly where they were mid-shift.
+    const refresh = () => shiftDetailView({ root, params });
+
+    async function withButton(btn, slotId, fn) {
+      if (btn.disabled) return;
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        await fn();
+        await refresh();
+      } catch (e) {
+        console.error('[FuelOps] save failed', e);
+        showErr(slotId, e?.message || 'Could not save. Check your connection and try again.');
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+
+    root.querySelector('#saveCredit').addEventListener('click', (ev)=>{
+      clearErr('cr_alert');
+      const customer = root.querySelector('#cr_customer').value.trim();
+      const amount = Number(root.querySelector('#cr_amount').value);
+      if (!customer) return showErr('cr_alert', 'Enter the customer name');
+      if (!amount || isNaN(amount) || amount <= 0) return showErr('cr_alert', 'Enter a valid amount');
+      withButton(ev.currentTarget, 'cr_alert', ()=> addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }));
+    });
+
+    root.querySelector('#saveExpense').addEventListener('click', (ev)=>{
+      clearErr('ex_alert');
+      const category = root.querySelector('#ex_cat').value;
+      const amount = Number(root.querySelector('#ex_amount').value);
+      const description = root.querySelector('#ex_desc')?.value.trim() || category;
+      if (!amount || isNaN(amount) || amount <= 0) return showErr('ex_alert', 'Enter a valid amount');
+      withButton(ev.currentTarget, 'ex_alert', ()=> addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount, description }));
+    });
+
+    root.querySelector('#saveNote').addEventListener('click', (ev)=>{
+      clearErr('note_alert');
+      const text = root.querySelector('#note_text').value.trim();
+      if (!text) return showErr('note_alert', 'Write something first');
+      withButton(ev.currentTarget, 'note_alert', ()=> addNote({ stationId: shift.stationId, shiftId: shift.id, text }));
+    });
 
   } else {
     const t = shift.totals || {};
