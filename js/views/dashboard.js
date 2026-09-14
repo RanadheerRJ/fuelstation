@@ -181,6 +181,9 @@ export async function dashboardView({ root }) {
   });
   const topPerformers = Object.values(perfByEmp).sort((a,b)=>b.liters-a.liters).slice(0,4);
 
+  // Retained (currently unrendered): the owner-view "To Receive" and gross
+  // figures were removed from the dashboard and will be reintroduced one at a
+  // time. Keeping the computation avoids re-deriving it when they come back.
   const toHandoverToday = todayShiftsAll.reduce((a,s)=>{ const gross=s.totals?.totalRevenue||0; const exp=expenseMap[s.id]||0; const net=gross-exp; const pay=s.totals?.totalPayments||0; return a + Math.max(0, net-pay); },0);
 
   if (isAttendant) {
@@ -352,11 +355,6 @@ export async function dashboardView({ root }) {
             <div>
               <div style="font-size:10px;opacity:0.6;letter-spacing:1px">TODAY'S NET SALES • WHOLE AMOUNT TO OWNER</div>
               <div style="font-size:30px;font-weight:800;margin-top:6px;letter-spacing:-1px">${formatCurrency(totalSalesAll)}</div>
-              <div style="font-size:10px;opacity:0.5;margin-top:4px;display:flex;align-items:center;gap:6px">
-                <span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:6px">Gross ${formatCurrency(totalGrossAll)}</span>
-                <span style="color:#ff8c61">- Exp ${formatCurrency(totalExpAll)}</span>
-                <span style="color:#95de64">= Net</span>
-              </div>
             </div>
             <div style="text-align:right">
               <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD • TODAY</div>
@@ -371,12 +369,7 @@ export async function dashboardView({ root }) {
             </div>
           </div>
 
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:20px">
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center;border:1px solid rgba(255,140,97,0.2)">
-              <div style="font-size:10px;opacity:0.6">TO RECEIVE</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px;color:#ff8c61">${formatCurrency(toHandoverToday)}</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">From staff • Net - Pay</div>
-            </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px">
             <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
               <div style="font-size:10px;opacity:0.6">PAYMENTS</div>
               <div style="font-size:15px;font-weight:700;margin-top:2px">${formatCurrency(totalPaymentsAll)}</div>
@@ -450,21 +443,17 @@ export async function dashboardView({ root }) {
           <div style="font-size:11px;font-weight:700;color:var(--text-secondary);letter-spacing:0.5px;margin-bottom:8px">📊 TODAY'S PERFORMANCE • BY EMPLOYEE</div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${Object.values(perfByEmp).sort((a,b)=>b.liters-a.liters).slice(0,5).map((emp, idx)=>{
-              const toReceive = todayShiftsAll.filter(s=>s.userId===emp.userId).reduce((a,s)=>{ const g=s.totals?.totalRevenue||0; const e=expenseMap[s.id]||0; const n=g-e; const p=s.totals?.totalPayments||0; return a + Math.max(0, n-p); },0);
               return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${idx===0?'#fff7e6':'#f8f9fa'};border-radius:10px;border:1px solid ${idx===0?'#ffd591':'transparent'}">
                 <div style="display:flex;align-items:center;gap:8px">
                   <div style="width:24px;height:24px;border-radius:50%;background:${idx===0?'#ff5a1f':'#1a2535'};color:white;display:grid;place-items:center;font-weight:800;font-size:10px">${idx+1}</div>
                   <div><div style="font-weight:700;font-size:12px">${emp.name} ${idx===0?'👑':''}</div><div style="font-size:10px;color:var(--text-secondary)">${emp.shifts} shifts • ${formatLiters(emp.liters)} • MS/HSD</div></div>
                 </div>
-                <div style="text-align:right"><div style="font-weight:700;font-size:12px">${formatCurrency(emp.net)}</div><div style="font-size:10px;color:${toReceive>0?'#cf1322':'#389e0d'}">${toReceive>0? 'To Receive '+formatCurrency(toReceive) : 'Settled'}</div></div>
+                <div style="text-align:right"><div style="font-weight:700;font-size:12px">${formatCurrency(emp.net)}</div></div>
               </div>`;
             }).join('') || `<div style="text-align:center;padding:12px;color:var(--text-secondary);font-size:11px">No shifts today</div>`}
           </div>
         </div>
 
-        <div style="margin-top:12px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f;font-size:10px;color:#389e0d;text-align:center">
-          💡 Owner view: <b>To Receive</b> = what staff must give you • Attendant view: <b>To Handover</b> = what they give • Simple, no jackpot collections
-        </div>
       </div>
 
       <!-- Quick Stats Banking -->
@@ -486,12 +475,6 @@ export async function dashboardView({ root }) {
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
             ${Object.entries(fuelAgg).slice(0,3).map(([ft,v])=>`<div style="display:flex;justify-content:space-between;font-size:11px"><span style="font-weight:600">${ft}</span><span>${formatLiters(v.liters)}</span></div>`).join('') || `<span style="font-size:11px;color:var(--text-tertiary)">No fuel data today</span>`}
           </div>
-        </div>
-        <div style="background:white;border-radius:14px;padding:14px;border:1px solid #ffa39e">
-          <div style="font-size:10px;color:#cf1322;letter-spacing:0.5px;font-weight:700">TO RECEIVE FROM STAFF</div>
-          <div style="font-weight:800;font-size:18px;margin-top:6px;color:#cf1322">${formatCurrency(toHandoverToday)}</div>
-          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Staff must give • Net - Payments</div>
-          <div style="margin-top:6px;font-size:9px;background:#fff1f0;padding:4px 6px;border-radius:6px;color:#cf1322;border:1px solid #ffa39e">Gross ${formatCurrency(totalGrossAll)} - Exp ${formatCurrency(totalExpAll)} = Net • Owner collects</div>
         </div>
       </div>
 
@@ -552,7 +535,7 @@ export async function dashboardView({ root }) {
 
       <div style="margin-top:14px;padding:12px;background:#f6ffed;border-radius:12px;border:1px solid #b7eb8f;text-align:center">
         <div style="font-size:11px;color:#389e0d;font-weight:600">✅ Banking Dashboard • Simple • Elegant • No jackpot</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Gross - Expenses = Net = whole amount to owner • To Handover = Net - Payments • Pumps live status • Employee performance by liters</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Net sales • Pumps live status • Employee performance by liters</div>
       </div>
     </div>
     <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style>
