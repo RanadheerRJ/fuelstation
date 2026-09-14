@@ -371,10 +371,10 @@ export async function dashboardView({ root }) {
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:20px">
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:10px;opacity:0.6">TO HANDOVER</div>
+            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center;border:1px solid rgba(255,140,97,0.2)">
+              <div style="font-size:10px;opacity:0.6">TO RECEIVE</div>
               <div style="font-size:15px;font-weight:700;margin-top:2px;color:#ff8c61">${formatCurrency(toHandoverToday)}</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">Net - Payments</div>
+              <div style="font-size:9px;opacity:0.5;margin-top:2px">From staff • Net - Pay</div>
             </div>
             <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
               <div style="font-size:10px;opacity:0.6">PAYMENTS</div>
@@ -417,6 +417,55 @@ export async function dashboardView({ root }) {
         </div>
       </div>
 
+      <!-- Team Today - Who is doing what - Live Integration -->
+      <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;font-weight:800">👥 Team Today • Who is doing what</span>
+          <span style="font-size:10px;background:#f6ffed;color:#389e0d;padding:4px 8px;border-radius:12px;border:1px solid #b7eb8f">${todayShiftsAll.length} shifts • Live</span>
+        </div>
+        ${activeShifts.length>0 ? `
+          <div style="margin-top:12px">
+            <div style="font-size:11px;font-weight:700;color:#1677ff;letter-spacing:0.5px;margin-bottom:8px">🔴 LIVE NOW • ${activeShifts.length} working</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              ${activeShifts.map(sh=>{
+                const pumpNames = (sh.nozzles||[]).map(n=>{
+                  const p = pumps.find(pp=>pp.id===n.pumpId);
+                  return p ? p.name : 'Pump';
+                }).join(', ');
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#e6f4ff;border-radius:10px;border:1px solid #91caff">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <div style="width:8px;height:8px;background:#ff4d4f;border-radius:50%;animation:pulse 1s infinite"></div>
+                    <div style="width:32px;height:32px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:11px">${(sh.employeeName||'?')[0]}</div>
+                    <div><div style="font-weight:700;font-size:12px">${sh.employeeName}</div><div style="font-size:10px;color:var(--text-secondary)">On ${pumpNames} • ${sh.nozzles?.length||0} nozzles • Started ${new Date(sh.startTime).toLocaleTimeString()}</div></div>
+                  </div>
+                  <button style="min-height:32px;padding:0 10px;border-radius:8px;background:#1677ff;color:white;border:none;font-size:11px;font-weight:600" onclick="location.hash='#/shifts/${sh.id}'">View</button>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        ` : `<div style="margin-top:12px;padding:10px;background:#f8f9fa;border-radius:10px;text-align:center;font-size:11px;color:var(--text-secondary)">No one working now • All pumps free</div>`}
+
+        <div style="margin-top:16px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-secondary);letter-spacing:0.5px;margin-bottom:8px">📊 TODAY'S PERFORMANCE • BY EMPLOYEE</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${Object.values(perfByEmp).sort((a,b)=>b.liters-a.liters).slice(0,5).map((emp, idx)=>{
+              const toReceive = todayShiftsAll.filter(s=>s.userId===emp.userId).reduce((a,s)=>{ const g=s.totals?.totalRevenue||0; const e=expenseMap[s.id]||0; const n=g-e; const p=s.totals?.totalPayments||0; return a + Math.max(0, n-p); },0);
+              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${idx===0?'#fff7e6':'#f8f9fa'};border-radius:10px;border:1px solid ${idx===0?'#ffd591':'transparent'}">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:24px;height:24px;border-radius:50%;background:${idx===0?'#ff5a1f':'#1a2535'};color:white;display:grid;place-items:center;font-weight:800;font-size:10px">${idx+1}</div>
+                  <div><div style="font-weight:700;font-size:12px">${emp.name} ${idx===0?'👑':''}</div><div style="font-size:10px;color:var(--text-secondary)">${emp.shifts} shifts • ${formatLiters(emp.liters)} • MS/HSD</div></div>
+                </div>
+                <div style="text-align:right"><div style="font-weight:700;font-size:12px">${formatCurrency(emp.net)}</div><div style="font-size:10px;color:${toReceive>0?'#cf1322':'#389e0d'}">${toReceive>0? 'To Receive '+formatCurrency(toReceive) : 'Settled'}</div></div>
+              </div>`;
+            }).join('') || `<div style="text-align:center;padding:12px;color:var(--text-secondary);font-size:11px">No shifts today</div>`}
+          </div>
+        </div>
+
+        <div style="margin-top:12px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f;font-size:10px;color:#389e0d;text-align:center">
+          💡 Owner view: <b>To Receive</b> = what staff must give you • Attendant view: <b>To Handover</b> = what they give • Simple, no jackpot collections
+        </div>
+      </div>
+
       <!-- Quick Stats Banking -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
         <div style="background:white;border-radius:14px;padding:14px;border:1px solid var(--border)">
@@ -437,11 +486,11 @@ export async function dashboardView({ root }) {
             ${Object.entries(fuelAgg).slice(0,3).map(([ft,v])=>`<div style="display:flex;justify-content:space-between;font-size:11px"><span style="font-weight:600">${ft}</span><span>${formatLiters(v.liters)}</span></div>`).join('') || `<span style="font-size:11px;color:var(--text-tertiary)">No fuel data today</span>`}
           </div>
         </div>
-        <div style="background:white;border-radius:14px;padding:14px;border:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text-secondary);letter-spacing:0.5px">TO HANDOVER</div>
+        <div style="background:white;border-radius:14px;padding:14px;border:1px solid #ffa39e">
+          <div style="font-size:10px;color:#cf1322;letter-spacing:0.5px;font-weight:700">TO RECEIVE FROM STAFF</div>
           <div style="font-weight:800;font-size:18px;margin-top:6px;color:#cf1322">${formatCurrency(toHandoverToday)}</div>
-          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Net - Payments • Simple</div>
-          <div style="margin-top:6px;font-size:9px;background:#fff1f0;padding:4px 6px;border-radius:6px;color:#cf1322;border:1px solid #ffa39e">Gross ${formatCurrency(totalGrossAll)} - Exp ${formatCurrency(totalExpAll)} = Net</div>
+          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Staff must give • Net - Payments</div>
+          <div style="margin-top:6px;font-size:9px;background:#fff1f0;padding:4px 6px;border-radius:6px;color:#cf1322;border:1px solid #ffa39e">Gross ${formatCurrency(totalGrossAll)} - Exp ${formatCurrency(totalExpAll)} = Net • Owner collects</div>
         </div>
       </div>
 

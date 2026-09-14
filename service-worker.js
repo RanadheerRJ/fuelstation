@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v37-home-no-top-performers-ms-hsd-box-20260913';
+const CACHE_NAME = 'fuelops-v38-owner-to-receive-not-handover-team-live-20260913';
 const APP_SHELL = [
   './',
   './index.html',
