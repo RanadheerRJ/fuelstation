@@ -20,6 +20,13 @@ export async function getAllStations() { return await listDocs('stations'); }
 
 export async function createStation(data) {
   const { user } = getState();
+  if (!user?.uid) throw new Error('You are not signed in.');
+  // Previously any signed-in user could create a station (the rules even had
+  // `|| true`). Station creation is an owner-level action.
+  if (!['super_admin','owner'].includes(user.role)) {
+    throw new Error('Only an owner can create a station.');
+  }
+  if (!String(data.name||'').trim()) throw new Error('Station name is required.');
   const payload = {
     name: data.name,
     address: data.address,
@@ -36,6 +43,15 @@ export async function createStation(data) {
 
 export async function updateStation(id, patch) {
   const { user } = getState();
+  if (!user?.uid) throw new Error('You are not signed in.');
+  if (!['super_admin','owner','admin'].includes(user.role)) {
+    throw new Error('Only an owner or admin can edit station details.');
+  }
+  if (user.role !== 'super_admin' && !(user.stationIds||[]).includes(id)) {
+    throw new Error('You do not have access to this station.');
+  }
+  // ownerId is the root of the access model — it must not be reassigned here.
+  if ('ownerId' in patch) throw new Error('Station ownership cannot be changed from here.');
   const res = await updateDocById('stations', id, patch);
   await logAudit({ userId: user?.uid, stationId: id, action: 'STATION_UPDATED', metadata: patch });
   return res;

@@ -1,5 +1,8 @@
 import { listDocs, addDocTo, updateDocById, queryDocs, logAudit } from './firestoreService.js';
 import { getState } from '../state.js';
+import { parseMoneyInput } from './money.js';
+
+const PRICE_SETTER_ROLES = ['super_admin', 'owner', 'admin', 'manager'];
 
 export async function getPrices(stationId) {
   const all = await queryDocs('prices', null, [{ field: 'stationId', op: '==', value: stationId }]);
@@ -34,21 +37,45 @@ export async function getPriceForFuelAtTime(stationId, fuelType, atTime) {
 
 export async function setPrice(stationId, fuelType, price) {
   const { user } = getState();
+  if (!user?.uid) throw new Error('You are not signed in.');
+
+  // Fuel price drives every rupee the station books. Previously any signed-in
+  // user could change it — an attendant could have lowered the price, sold at
+  // the real rate and pocketed the difference.
+  if (!PRICE_SETTER_ROLES.includes(user.role)) {
+    throw new Error('Only a manager, admin or owner can change fuel prices.');
+  }
+  if (user.role !== 'super_admin' && !(user.stationIds || []).includes(stationId)) {
+    throw new Error('You do not have access to this station.');
+  }
+  if (!fuelType) throw new Error('Fuel type is required.');
+
+  // `Number(price)` accepted "abc" as NaN and stored it, which then made every
+  // shift closed at that price compute NaN revenue.
+  const p = parseMoneyInput(price, { label: 'Price', warnAbove: 500 });
+  if (!p.ok) throw new Error(p.error);
+  if (p.value <= 0) throw new Error('Price must be greater than zero.');
+
   // close previous active price
   const active = await queryDocs('prices', p => !p.effectiveTo, [{ field: 'stationId', op: '==', value: stationId }, { field: 'fuelType', op: '==', value: fuelType }]);
   const now = new Date();
   for (const old of active) {
     await updateDocById('prices', old.id, { effectiveTo: now.toISOString() });
   }
+  const previous = active[0]?.price ?? null;
   const payload = {
     stationId,
     fuelType,
-    price: Number(price),
+    price: p.value,
     effectiveFrom: now.toISOString(),
     effectiveTo: null,
-    createdBy: user?.uid,
+    createdBy: user.uid,
+    createdByName: user.name || null,
   };
   const doc = await addDocTo('prices', payload);
-  await logAudit({ userId: user?.uid, stationId, action: 'PRICE_CHANGED', metadata: { fuelType, price } });
-  return doc;
+  await logAudit({
+    stationId, action: 'PRICE_CHANGED', entityType: 'price', entityId: doc.id,
+    metadata: { fuelType, from: previous, to: p.value },
+  });
+  return { ...doc, warning: p.warning || null };
 }

@@ -53,6 +53,9 @@ export async function loginWithPhonePin(phone, pin, expectedRole = null) {
     const expected = user.pinHash;
     const isMatch = expected === pin || atobSafe(expected) === pin || expected === btoa(pin);
     if (!isMatch) throw new Error('Invalid PIN');
+
+    // A deactivated employee keeps their credentials but must not get in.
+    assertAccountActive(user);
     
     const sessionUser = { uid: user.uid, phone: user.phone, name: user.name, role: user.role, stationIds: user.stationIds, status: user.status };
     setState({ user: sessionUser, currentStationId: user.stationIds?.[0] || null });
@@ -75,7 +78,12 @@ export async function loginWithPhonePin(phone, pin, expectedRole = null) {
     if (!snap.exists()) throw new Error('User profile not found');
     
     const profile = snap.data();
-    
+
+    // A deactivated employee keeps their Firebase Auth credentials, so the
+    // sign-in above still succeeds. The profile status is what revokes access.
+    // (Also enforced server-side: firestore.rules require status == 'active'.)
+    assertAccountActive(profile);
+
     // Role validation for Dev vs User login
     if (expectedRole === 'dev' && profile.role !== 'super_admin') {
       throw new Error('Not a Developer account. Use User Login.');
@@ -93,6 +101,19 @@ export async function loginWithPhonePin(phone, pin, expectedRole = null) {
       throw new Error('Invalid phone or PIN');
     }
     throw e;
+  }
+}
+
+/**
+ * Reject sign-in for accounts that are not active.
+ * NOTE: this is the friendly message. The real enforcement is in
+ * firestore.rules, where isActive() gates every read and write — a disabled
+ * user who bypassed this check would still be unable to touch any data.
+ */
+function assertAccountActive(profile) {
+  const status = profile?.status || 'active';
+  if (status !== 'active') {
+    throw new Error('This account has been deactivated. Contact your station owner.');
   }
 }
 
