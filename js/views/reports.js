@@ -4,6 +4,7 @@ import { getReportForRange } from '../services/reports.js';
 import { getShifts } from '../services/shifts.js';
 import { formatLiters } from '../services/calc.js';
 import { getEmployees } from '../services/users.js';
+import { getBusinessDate, addBusinessDays } from '../services/datetime.js';
 
 export async function reportsView({ root, query }) {
   const { user, currentStationId } = getState();
@@ -13,15 +14,14 @@ export async function reportsView({ root, query }) {
 
   const isAttendant = user.role === 'attendant';
 
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0,10);
-  const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
-  const yesterdayStr = yesterday.toISOString().slice(0,10);
-  const weekStart = new Date(); weekStart.setDate(today.getDate()-6);
-  const weekStr = weekStart.toISOString().slice(0,10);
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
-  const last30 = new Date(); last30.setDate(today.getDate()-29);
-  const last30Str = last30.toISOString().slice(0,10);
+  // All range maths in IST business dates. The previous code mixed UTC
+  // (toISOString) with device-local getDate(), so between 00:00 and 05:30 IST
+  // "Today" showed yesterday's shifts.
+  const todayStr = getBusinessDate(new Date());
+  const yesterdayStr = addBusinessDays(todayStr, -1);
+  const weekStr = addBusinessDays(todayStr, -6);
+  const monthStart = todayStr.slice(0,8) + '01';
+  const last30Str = addBusinessDays(todayStr, -29);
   const allTime = '2024-01-01';
 
   let fromDate = query.from || weekStr;
@@ -79,7 +79,7 @@ export async function reportsView({ root, query }) {
   const grouped = {};
   filteredShifts.sort((a,b)=> new Date(b.startTime) - new Date(a.startTime));
   filteredShifts.forEach(s=>{
-    const d = new Date(s.startTime).toISOString().slice(0,10);
+    const d = getBusinessDate(s.startTime); // IST bucket
     if (!grouped[d]) grouped[d]=[];
     grouped[d].push(s);
   });

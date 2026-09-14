@@ -1,9 +1,10 @@
 import { queryDocs } from './firestoreService.js';
+import { getBusinessDate, getBusinessDayStart, getBusinessDayEnd } from './datetime.js';
 
 export async function getDailyReport(stationId, dateStr) {
   const shifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: stationId }]);
   const dayShifts = shifts.filter(s => {
-    const d = new Date(s.startTime).toISOString().slice(0,10);
+    const d = getBusinessDate(s.startTime); // IST, not UTC
     return d === dateStr;
   });
   let totalLiters = 0, totalRevenue = 0, totalPayments = 0, variance = 0;
@@ -33,8 +34,10 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
   const { userId, status, employeeId } = opts;
   let shifts = await queryDocs('shifts', null, [{ field: 'stationId', op: '==', value: stationId }]);
   
-  const from = new Date(fromDateStr + 'T00:00:00');
-  const to = new Date(toDateStr + 'T23:59:59');
+  // Range boundaries in IST. `new Date('2026-09-14T00:00:00')` used the device
+  // timezone, so the same query returned different shifts on different phones.
+  const from = getBusinessDayStart(fromDateStr);
+  const to = getBusinessDayEnd(toDateStr);
   shifts = shifts.filter(s => {
     const d = new Date(s.startTime);
     return d >= from && d <= to;
@@ -130,7 +133,7 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
     if (netVariance < -0.5) byEmployee[empKey].toCollect += Math.abs(netVariance);
     if (netVariance > 0.5) byEmployee[empKey].toReturn += netVariance;
 
-    const dateKey = new Date(sh.startTime).toISOString().slice(0,10);
+    const dateKey = getBusinessDate(sh.startTime); // IST, not UTC
     if (!byDate[dateKey]) byDate[dateKey] = { date: dateKey, shifts:0, liters:0, gross:0, expenses:0, net:0, revenue:0 };
     byDate[dateKey].shifts += 1;
     byDate[dateKey].liters += liters;

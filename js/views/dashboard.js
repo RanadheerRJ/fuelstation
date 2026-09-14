@@ -1,4 +1,5 @@
 import { getState, setState } from '../state.js';
+import { getBusinessDate } from '../services/datetime.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
 import { formatCurrency, formatLiters } from '../services/calc.js';
@@ -60,7 +61,7 @@ export async function dashboardView({ root }) {
   // Fetch all needed data
   const allShifts = await getShifts(activeStation.id);
   const myShifts = allShifts.filter(s=>s.userId===user.uid);
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = getBusinessDate(new Date()); // IST business date
   
   const isOwner = user.role === 'owner';
   const isManager = user.role === 'manager';
@@ -87,7 +88,7 @@ export async function dashboardView({ root }) {
   } catch {}
 
   // Today calculations
-  const todayShiftsAll = allShifts.filter(s=> new Date(s.startTime).toISOString().slice(0,10)===todayStr);
+  const todayShiftsAll = allShifts.filter(s=> getBusinessDate(s.startTime)===todayStr);
   let totalSalesAll = 0, totalGrossAll = 0, totalExpAll = 0, totalLitersAll = 0, totalPaymentsAll = 0;
   const fuelAgg = {};
   todayShiftsAll.forEach(s=>{ 
@@ -116,7 +117,7 @@ export async function dashboardView({ root }) {
     else otherLitersAll += v.liters||0;
   });
 
-  const todayShiftsMy = myShifts.filter(s=> new Date(s.startTime).toISOString().slice(0,10)===todayStr);
+  const todayShiftsMy = myShifts.filter(s=> getBusinessDate(s.startTime)===todayStr);
   let totalSalesMy = 0, totalLitersMy = 0, varianceMy = 0, toHandoverMy = 0, myGross = 0, myExp = 0;
   let msLitersMy = 0, hsdLitersMy = 0;
   const myFuelAgg = {};
