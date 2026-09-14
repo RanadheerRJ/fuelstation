@@ -142,18 +142,72 @@ export async function shiftDetailView({ root, params }) {
   const expenses = transactions.filter(t=>t.type==='expense');
 
   if (shift.status === 'ACTIVE') {
+    const { getPumps, getNozzles } = await import('../services/pumps.js');
+    const { getShifts } = await import('../services/shifts.js');
+    const pumps = await getPumps(shift.stationId);
+    const allNozzles = await getNozzles(shift.stationId);
+    const activeShifts = await getShifts(shift.stationId, { status: 'ACTIVE' });
+    const occupiedNozzleIds = new Set();
+    activeShifts.forEach(sh => {
+      if (sh.id === shift.id) return;
+      (sh.nozzles||[]).forEach(n=> occupiedNozzleIds.add(n.nozzleId));
+    });
+    const myNozzleIds = new Set((shift.nozzles||[]).map(n=>n.nozzleId));
+    const availableNozzles = allNozzles.filter(n=> n.status==='active' && !myNozzleIds.has(n.id) && !occupiedNozzleIds.has(n.id));
+
     root.innerHTML = `
       <div class="container" style="max-width:480px;margin:0 auto;padding-bottom:100px">
         <div style="display:flex;justify-content:space-between;align-items:center"><div><h1 class="page-title" style="font-size:20px">Active Shift</h1><p class="page-sub" style="margin-top:4px">${shift.employeeName} • Started ${formatDateTime(shift.startTime)}</p></div><span class="badge badge--info" style="padding:8px 12px;border-radius:20px">ACTIVE</span></div>
-        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Nozzles (${shift.nozzles?.length||0})</h3><div class="list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${(shift.nozzles||[]).map(n=>`<div class="neu-card neu-card--sm" style="padding:12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600;font-size:13px">${n.fuelType} • Nozzle</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Opening ${Number(n.openingReading).toFixed(2)}</div></div><div class="badge badge--neutral" style="padding:6px 10px;border-radius:20px;font-size:11px">${n.fuelType}</div></div>`).join('')}</div></div>
+        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="font-weight:700;font-size:14px">My Nozzles (${shift.nozzles?.length||0}) • Active</h3>
+            <button id="addNozzleBtn" class="neu-btn neu-btn--primary" style="min-height:36px;padding:0 14px;border-radius:10px;font-size:13px;font-weight:700">+ Add Pump</button>
+          </div>
+          <div class="list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+            ${(shift.nozzles||[]).map(n=>{
+              const pump = pumps.find(p=>p.id===n.pumpId);
+              return `<div class="neu-card neu-card--sm" style="padding:12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid #52c41a"><div><div style="font-weight:600;font-size:13px">${pump?.name||'Pump'} • ${n.fuelType} • Nozzle</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Opening ${Number(n.openingReading).toFixed(2)} ${n.addedAt?`• Added ${new Date(n.addedAt).toLocaleTimeString()}`:''}</div></div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge--success" style="padding:4px 8px;border-radius:12px;font-size:10px">IN USE</span><button class="neu-btn remove-nozzle-btn" data-id="${n.nozzleId}" style="min-height:28px;min-width:28px;border-radius:50%;padding:0;font-size:12px">✕</button></div></div>`;
+            }).join('')}
+          </div>
+          ${availableNozzles.length===0 ? `<div style="margin-top:10px;padding:10px;background:#f0f0f0;border-radius:8px;text-align:center;font-size:11px;color:var(--text-secondary)">No more free nozzles • All pumps occupied or already in your shift</div>` : `<div style="margin-top:10px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f;font-size:11px;color:#389e0d;text-align:center">${availableNozzles.length} free nozzle(s) available • Tap + Add Pump to add another</div>`}
+        </div>
         
-        <!-- Clean handy buttons - major actions out -->
         <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <button class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600" onclick="document.getElementById('creditModal').style.display='flex'">💳 + Credit</button>
           <button class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600" onclick="document.getElementById('expenseModal').style.display='flex'">🧾 + Expense</button>
           <button class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600" onclick="document.getElementById('noteModal').style.display='flex'">📝 + Note</button>
           <button class="neu-btn neu-btn--primary" style="min-height:48px;border-radius:12px;font-weight:700" onclick="location.hash='#/shifts/${shift.id}/close'">Close Shift →</button>
         </div>
+
+        <!-- Add Pump Modal -->
+        <div id="addPumpModal" class="modal-backdrop" style="display:none">
+          <div class="modal" style="border-radius:16px;max-width:420px;max-height:80vh;overflow:auto">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <h3 style="font-weight:800">⛽ Add Pump / Nozzle to Active Shift</h3>
+              <button class="neu-btn" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('addPumpModal').style.display='none'">✕</button>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-top:8px">You are on 24hr shift and need another pump? Select free nozzle and enter opening reading. It will be added to your current active shift.</p>
+            ${availableNozzles.length===0 ? `<div style="margin-top:16px;padding:16px;background:#fff1f0;border-radius:12px;border:1px solid #ffa39e;text-align:center"><div style="font-size:24px">⛽</div><h4 style="margin-top:8px">No free nozzles</h4><p style="font-size:12px;color:var(--text-secondary);margin-top:4px">All nozzles are occupied by other active shifts or already in your shift. Free a pump first or ask manager.</p></div>` : `
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px" id="availableList">
+              ${availableNozzles.map(n=>{
+                const pump = pumps.find(p=>p.id===n.pumpId);
+                return `<div class="neu-card" style="padding:14px;border-radius:12px;cursor:pointer;border:1.5px solid var(--border)" data-nozzle="${n.id}" data-pump="${n.pumpId}" data-fuel="${n.fuelType}" data-last="${n.lastReading||0}">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div><div style="font-weight:700;font-size:14px">${pump?.name||'Pump'} • Nozzle ${n.number} • ${n.fuelType}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Last: ${Number(n.lastReading||0).toFixed(2)} • ${n.status}</div></div>
+                    <span class="badge badge--success" style="padding:4px 8px;border-radius:12px;font-size:10px">FREE</span>
+                  </div>
+                  <div style="margin-top:10px;display:none" class="add-form">
+                    <label class="label" style="font-size:11px">Opening Reading for this nozzle</label>
+                    <input class="neu-input opening-add" type="number" step="0.01" value="${n.lastReading||0}" style="min-height:44px;border-radius:10px;font-size:15px;font-weight:600">
+                    <button class="neu-btn neu-btn--primary confirm-add" style="margin-top:10px;min-height:44px;border-radius:10px;width:100%;font-weight:700">✓ Add to My Shift</button>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+            `}
+          </div>
+        </div>
+
 
         <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Credits (${credits.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${c.customer}</span><span style="font-weight:700">${formatCurrency(c.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No credits</p>`}</div></div>
         <div class="neu-card" style="margin-top:12px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Expenses (${expenses.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${e.category}</span><span style="font-weight:700">${formatCurrency(e.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No expenses</p>`}</div></div>
@@ -165,6 +219,73 @@ export async function shiftDetailView({ root, params }) {
     root.querySelector('#saveCredit').addEventListener('click', async ()=>{ const customer = root.querySelector('#cr_customer').value.trim(); const amount = root.querySelector('#cr_amount').value; if (!customer || !amount) return alert('Fill required'); try { await addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }); location.reload(); } catch(e){ alert(e.message); } });
     root.querySelector('#saveExpense').addEventListener('click', async ()=>{ const category = root.querySelector('#ex_cat').value; const amount = root.querySelector('#ex_amount').value; if (!amount) return alert('Amount required'); try { await addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount }); location.reload(); } catch(e){ alert(e.message); } });
     root.querySelector('#saveNote').addEventListener('click', async ()=>{ const text = root.querySelector('#note_text').value.trim(); if (!text) return alert('Note required'); try { await addNote({ stationId: shift.stationId, shiftId: shift.id, text }); location.reload(); } catch(e){ alert(e.message); } });
+
+    // Add Pump / Nozzle to active shift
+    root.querySelector('#addNozzleBtn')?.addEventListener('click', ()=>{
+      document.getElementById('addPumpModal').style.display='flex';
+    });
+
+    // Select nozzle to add - show opening form
+    root.querySelectorAll('#availableList .neu-card').forEach(card=>{
+      card.addEventListener('click', (e)=>{
+        if (e.target.classList.contains('confirm-add') || e.target.classList.contains('opening-add')) return;
+        // Hide all forms, show this one
+        root.querySelectorAll('#availableList .add-form').forEach(f=>f.style.display='none');
+        root.querySelectorAll('#availableList .neu-card').forEach(c=>c.style.borderColor='var(--border)');
+        const form = card.querySelector('.add-form');
+        if (form) {
+          form.style.display='block';
+          card.style.borderColor='#52c41a';
+          card.style.background='#f6ffed';
+        }
+      });
+    });
+
+    // Confirm add nozzle
+    root.querySelectorAll('.confirm-add').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const card = btn.closest('.neu-card');
+        const nozzleId = card.dataset.nozzle;
+        const pumpId = card.dataset.pump;
+        const fuelType = card.dataset.fuel;
+        const openingInput = card.querySelector('.opening-add');
+        const opening = Number(openingInput.value);
+        if (isNaN(opening) || opening < 0) return alert('Enter valid opening reading');
+        
+        if (!confirm(`Add ${fuelType} nozzle to your active shift with opening ${opening}?\n\nThis pump will be added to your account and you can close it together with current shift.`)) return;
+        
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        try {
+          const { addNozzleToShift } = await import('../services/shifts.js');
+          await addNozzleToShift(shift.id, { nozzleId, pumpId, fuelType, openingReading: opening });
+          alert(`✅ Added ${fuelType} pump to your shift!`);
+          location.reload();
+        } catch(err){
+          alert('Failed: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = '✓ Add to My Shift';
+        }
+      });
+    });
+
+    // Remove nozzle from active shift
+    root.querySelectorAll('.remove-nozzle-btn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const nozzleId = btn.dataset.id;
+        if ((shift.nozzles||[]).length <= 1) return alert('Cannot remove last nozzle - at least one required');
+        if (!confirm('Remove this nozzle from your active shift? You can add it again later.')) return;
+        try {
+          const { removeNozzleFromShift } = await import('../services/shifts.js');
+          await removeNozzleFromShift(shift.id, nozzleId);
+          alert('✅ Removed nozzle from shift');
+          location.reload();
+        } catch(err){ alert(err.message); }
+      });
+    });
+
 
   } else {
     const t = shift.totals || {};

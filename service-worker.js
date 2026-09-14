@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v30-fix-receipt-expenses-minus-fuel-sale-20260913';
+const CACHE_NAME = 'fuelops-v31-add-pump-to-active-shift-20260913';
 const APP_SHELL = [
   './',
   './index.html',

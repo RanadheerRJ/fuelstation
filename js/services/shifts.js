@@ -154,3 +154,49 @@ export async function resolveCorrection(shiftId, correctionId) {
 }
 
 export async function getShiftById(id) { return await getDocById('shifts', id); }
+
+export async function addNozzleToShift(shiftId, { nozzleId, pumpId, fuelType, openingReading }) {
+  const shift = await getDocById('shifts', shiftId);
+  if (!shift) throw new Error('Shift not found');
+  if (shift.status !== 'ACTIVE') throw new Error('Only active shifts can add nozzles');
+
+  // Check nozzle not already in this shift
+  if ((shift.nozzles||[]).some(n=>n.nozzleId===nozzleId)) {
+    throw new Error('Nozzle already in your shift');
+  }
+
+  // Check nozzle not in other active shifts
+  const activeShifts = await queryDocs('shifts', s => s.stationId === shift.stationId && s.status === 'ACTIVE' && s.id !== shiftId);
+  for (const sh of activeShifts) {
+    if ((sh.nozzles||[]).some(n=>n.nozzleId===nozzleId)) {
+      throw new Error(`Nozzle already has an active shift by ${sh.employeeName}`);
+    }
+  }
+
+  const newNozzle = {
+    nozzleId,
+    pumpId,
+    fuelType,
+    openingReading: Number(openingReading),
+    closingReading: null,
+    litersSold: 0,
+    price: 0,
+    revenue: 0,
+    addedAt: new Date().toISOString(),
+  };
+
+  const updatedNozzles = [...(shift.nozzles||[]), newNozzle];
+  const res = await updateDocById('shifts', shiftId, { nozzles: updatedNozzles });
+  return res;
+}
+
+export async function removeNozzleFromShift(shiftId, nozzleId) {
+  const shift = await getDocById('shifts', shiftId);
+  if (!shift) throw new Error('Shift not found');
+  if (shift.status !== 'ACTIVE') throw new Error('Only active shifts can remove nozzles');
+  if ((shift.nozzles||[]).length <= 1) throw new Error('Cannot remove last nozzle - at least one required');
+
+  const updatedNozzles = (shift.nozzles||[]).filter(n=>n.nozzleId!==nozzleId);
+  const res = await updateDocById('shifts', shiftId, { nozzles: updatedNozzles });
+  return res;
+}
