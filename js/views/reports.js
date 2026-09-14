@@ -3,20 +3,21 @@ import { getStationsForCurrentUser } from '../services/stations.js';
 import { getReportForRange, toDateKey } from '../services/reports.js';
 import { formatLiters } from '../services/calc.js';
 import { getEmployees } from '../services/users.js';
-import { getPumps } from '../services/pumps.js';
 
 // ---------------------------------------------------------------- helpers
 const todayKey = () => toDateKey(new Date());
 const shiftDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return toDateKey(d); };
 const firstOfMonth = () => { const d = new Date(); return toDateKey(new Date(d.getFullYear(), d.getMonth(), 1)); };
 
-const PRESETS = () => [
-  { label: 'Today', from: todayKey(), to: todayKey() },
-  { label: 'Yesterday', from: shiftDays(-1), to: shiftDays(-1) },
-  { label: 'Last 7 Days', from: shiftDays(-6), to: todayKey() },
-  { label: 'This Month', from: firstOfMonth(), to: todayKey() },
-  { label: 'Last 30 Days', from: shiftDays(-29), to: todayKey() },
-];
+// Date ranges offered in the single dropdown.
+const RANGES = () => ({
+  today:  { label: 'Today',        from: todayKey(),     to: todayKey() },
+  yest:   { label: 'Yesterday',    from: shiftDays(-1),  to: shiftDays(-1) },
+  '7d':   { label: 'Last 7 days',  from: shiftDays(-6),  to: todayKey() },
+  month:  { label: 'This month',   from: firstOfMonth(), to: todayKey() },
+  '30d':  { label: 'Last 30 days', from: shiftDays(-29), to: todayKey() },
+  all:    { label: 'All time',     from: '2000-01-01',   to: todayKey() },
+});
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -57,89 +58,43 @@ export async function reportsView({ root, query }) {
   const isAttendant = user.role === 'attendant';
   const station = stations.find(s => s.id === stationId);
 
+  const ranges = RANGES();
   const f = {
-    from: query.from || shiftDays(-6),
-    to: query.to || todayKey(),
+    range: ranges[query.range] ? query.range : '7d',
     emp: isAttendant ? user.uid : (query.emp || 'all'),
-    pump: query.pump || 'ALL',
-    fuel: query.fuel || 'ALL',
   };
+  const range = ranges[f.range];
 
-  const report = await getReportForRange(stationId, f.from, f.to, {
-    employeeId: f.emp,
-    pumpId: f.pump,
-    fuelType: f.fuel,
-  });
+  const report = await getReportForRange(stationId, range.from, range.to, { employeeId: f.emp });
 
-  // Dropdown options from everything in range, so you can always switch back
-  const all = await getReportForRange(stationId, f.from, f.to);
-  const fuelOptions = all.byFuel.map(v => v.fuelType);
-
-  let pumpOptions = [];
-  try {
-    pumpOptions = (await getPumps(stationId)).map(p => ({ id: p.id, name: p.name || `Pump ${p.number}` }));
-  } catch { pumpOptions = []; }
-  if (!pumpOptions.length) pumpOptions = all.byPump.map(p => ({ id: p.pumpId, name: p.pumpName }));
-
+  // Staff list for the dropdown — everyone, so you can always switch back.
   let employeeOptions = [];
   if (!isAttendant) {
     try {
-      employeeOptions = (await getEmployees(stationId)).map(e => ({ id: e.uid || e.id, name: e.name || e.phone || 'Staff' }));
+      employeeOptions = (await getEmployees(stationId))
+        .map(e => ({ id: e.uid || e.id, name: e.name || e.phone || 'Staff' }));
     } catch { employeeOptions = []; }
-    if (!employeeOptions.length) employeeOptions = all.byEmployee.map(e => ({ id: e.userId, name: e.employeeName }));
+    if (!employeeOptions.length) {
+      const all = await getReportForRange(stationId, range.from, range.to);
+      employeeOptions = all.byEmployee.map(e => ({ id: e.userId, name: e.employeeName }));
+    }
   }
 
   const empName = f.emp === 'all'
     ? 'All staff'
     : (employeeOptions.find(e => e.id === f.emp)?.name || report.byEmployee[0]?.employeeName || 'Staff');
-  const pumpName = f.pump === 'ALL' ? 'All pumps' : (pumpOptions.find(p => p.id === f.pump)?.name || 'Pump');
-  const activeCount = [f.emp !== 'all', f.pump !== 'ALL', f.fuel !== 'ALL'].filter(Boolean).length;
 
   // ------------------------------------------------------------ filters
   const filtersHtml = `
-    <div class="neu-card" style="margin-top:14px;padding:14px;border-radius:14px">
-      <div style="display:flex;gap:8px;overflow:auto;padding-bottom:4px">
-        ${PRESETS().map(p => {
-          const on = f.from === p.from && f.to === p.to;
-          return `<button class="preset-btn neu-btn" data-from="${p.from}" data-to="${p.to}" style="min-height:34px;padding:0 14px;border-radius:20px;font-size:12px;white-space:nowrap;${on ? 'background:#232f3e;color:white;border-color:#232f3e' : ''}">${p.label}</button>`;
-        }).join('')}
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-        <div><label class="label" style="font-size:11px">From</label><input type="date" id="fromDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${f.from}" max="${todayKey()}"></div>
-        <div><label class="label" style="font-size:11px">To</label><input type="date" id="toDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${f.to}" max="${todayKey()}"></div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:${isAttendant ? '1fr 1fr' : '1fr 1fr 1fr'};gap:10px;margin-top:10px">
-        ${isAttendant ? '' : `
-        <div><label class="label" style="font-size:11px">Employee</label>
-          <select id="empFilter" class="neu-select" style="min-height:44px;border-radius:10px">
-            <option value="all">All staff</option>
-            ${employeeOptions.map(e => `<option value="${esc(e.id)}" ${f.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
-          </select>
-        </div>`}
-        <div><label class="label" style="font-size:11px">Pump</label>
-          <select id="pumpFilter" class="neu-select" style="min-height:44px;border-radius:10px">
-            <option value="ALL">All pumps</option>
-            ${pumpOptions.map(p => `<option value="${esc(p.id)}" ${f.pump === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div><label class="label" style="font-size:11px">Fuel</label>
-          <select id="fuelFilter" class="neu-select" style="min-height:44px;border-radius:10px">
-            <option value="ALL">All fuels</option>
-            ${fuelOptions.map(ft => `<option value="${esc(ft)}" ${f.fuel === ft ? 'selected' : ''}>${esc(ft)}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:${activeCount ? '2fr 1fr' : '1fr'};gap:10px;margin-top:12px">
-        <button id="applyFilter" class="neu-btn neu-btn--primary" style="min-height:46px;border-radius:12px;font-weight:700">Apply</button>
-        ${activeCount ? `<button id="resetFilter" class="neu-btn" style="min-height:46px;border-radius:12px;font-weight:600">Clear ${activeCount}</button>` : ''}
-      </div>
-
-      <div style="margin-top:10px;font-size:11px;color:var(--text-secondary)">
-        ${f.from === f.to ? dayLabel(f.from) : `${f.from} → ${f.to}`} • ${esc(empName)} • ${esc(pumpName)}${f.fuel !== 'ALL' ? ' • ' + esc(f.fuel) : ''}
-      </div>
+    <div style="display:grid;grid-template-columns:${isAttendant ? '1fr' : '1fr 1fr'};gap:10px;margin-top:14px">
+      <select id="rangeFilter" class="neu-select" style="min-height:46px;border-radius:12px;font-weight:600">
+        ${Object.entries(ranges).map(([k, r]) => `<option value="${k}" ${f.range === k ? 'selected' : ''}>${r.label}</option>`).join('')}
+      </select>
+      ${isAttendant ? '' : `
+      <select id="empFilter" class="neu-select" style="min-height:46px;border-radius:12px;font-weight:600">
+        <option value="all">All staff</option>
+        ${employeeOptions.map(e => `<option value="${esc(e.id)}" ${f.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+      </select>`}
     </div>`;
 
   // ------------------------------------------------------------ totals
@@ -190,7 +145,7 @@ export async function reportsView({ root, query }) {
       <h3 style="font-weight:700;font-size:14px">By Pump</h3>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
         ${report.byPump.map(p => `
-          <div class="pump-row" data-pump="${esc(p.pumpId)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;background:var(--bg);border-radius:10px">
             <div style="min-width:0">
               <div style="font-weight:700;font-size:13px">${esc(p.pumpName)}</div>
               <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.staff.join(', '))} • ${esc(p.fuels.join(', '))}</div>
@@ -206,7 +161,7 @@ export async function reportsView({ root, query }) {
       <h3 style="font-weight:700;font-size:14px">By Fuel</h3>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
         ${report.byFuel.map(v => `
-          <div class="fuel-row" data-fuel="${esc(v.fuelType)}" style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px">
             <div style="font-weight:600;font-size:13px">${esc(v.fuelType)}</div>
             <div style="font-weight:700;font-size:13px">${formatLiters(v.liters)}</div>
           </div>`).join('')}
@@ -256,7 +211,7 @@ export async function reportsView({ root, query }) {
     <div class="neu-card" style="margin-top:14px;padding:24px;border-radius:14px;text-align:center">
       <div style="font-size:28px">📭</div>
       <p style="font-weight:700;margin-top:8px">Nothing in this range</p>
-      <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Try a wider date range${activeCount ? ' or clear the filters' : ''}.</p>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Pick a wider date range${f.emp !== 'all' ? ' or switch back to all staff' : ''}.</p>
     </div>`;
 
   root.innerHTML = `
@@ -276,35 +231,18 @@ export async function reportsView({ root, query }) {
   // ------------------------------------------------------------ handlers
   const go = (patch) => { location.hash = buildHash({ ...f, ...patch }); };
 
-  root.querySelectorAll('.preset-btn').forEach(b =>
-    b.addEventListener('click', () => go({ from: b.dataset.from, to: b.dataset.to })));
-
-  root.querySelector('#applyFilter')?.addEventListener('click', () => {
-    const from = root.querySelector('#fromDate').value;
-    const to = root.querySelector('#toDate').value;
-    if (!from || !to) return alert('Pick both dates');
-    if (from > to) return alert('From date cannot be after To date');
-    go({
-      from, to,
-      emp: root.querySelector('#empFilter')?.value || f.emp,
-      pump: root.querySelector('#pumpFilter').value,
-      fuel: root.querySelector('#fuelFilter').value,
-    });
-  });
-
-  root.querySelector('#resetFilter')?.addEventListener('click', () => go({ emp: 'all', pump: 'ALL', fuel: 'ALL' }));
+  root.querySelector('#rangeFilter')?.addEventListener('change', (e) => go({ range: e.target.value }));
+  root.querySelector('#empFilter')?.addEventListener('change', (e) => go({ emp: e.target.value }));
   root.querySelectorAll('.emp-row').forEach(el => el.addEventListener('click', () => go({ emp: el.dataset.emp })));
-  root.querySelectorAll('.pump-row').forEach(el => el.addEventListener('click', () => go({ pump: el.dataset.pump })));
-  root.querySelectorAll('.fuel-row').forEach(el => el.addEventListener('click', () => go({ fuel: el.dataset.fuel })));
 
-  root.querySelector('#exportBtn').addEventListener('click', () => exportCSV(report, f));
+  root.querySelector('#exportBtn').addEventListener('click', () => exportCSV(report, f, empName));
 }
 
-function exportCSV(report, f) {
+function exportCSV(report, f, esc_name) {
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const L = [];
   L.push(['Work Report', `${report.fromDate} to ${report.toDate}`].map(q).join(','));
-  L.push(['Filters', `employee=${f.emp}; pump=${f.pump}; fuel=${f.fuel}`].map(q).join(','));
+  L.push(['Filter', `${esc_name}`].map(q).join(','));
   L.push('');
   L.push(['Date', 'Employee', 'Start', 'End', 'Status', 'Pump', 'Fuel', 'Liters'].map(q).join(','));
   report.shifts.forEach(s => {
