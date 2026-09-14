@@ -1,4 +1,7 @@
 // Simple global state store
+// NOTE: the 'fuelops_*' localStorage keys below are intentionally NOT renamed to
+// PumpPulse. They identify data already on users' devices — changing them would
+// sign everyone out and orphan their saved state.
 const STORAGE_KEY = 'fuelops_state_v1';
 
 const defaultState = {

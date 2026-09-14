@@ -23,7 +23,7 @@ export async function devSetupView({ root }) {
       <div class="login-wrapper">
         <div class="login-brand">
           <div class="brand-mark">F</div>
-          <div class="app-name">FuelOps</div>
+          <div class="app-name">PumpPulse</div>
           <div class="app-sub">Setup Complete</div>
         </div>
         <div class="login-card" style="text-align:center">
@@ -42,7 +42,7 @@ export async function devSetupView({ root }) {
     <div class="login-wrapper">
       <div class="login-brand">
         <div class="brand-mark">F</div>
-        <div class="app-name">FuelOps</div>
+        <div class="app-name">PumpPulse</div>
         <div class="app-sub">Developer Setup • Hidden Route</div>
       </div>
 

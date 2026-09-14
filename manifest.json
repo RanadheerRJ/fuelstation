@@ -1,6 +1,6 @@
 {
-  "name": "FuelOps - Fuel Station Operations",
-  "short_name": "FuelOps",
+  "name": "PumpPulse - Fuel Station Operations",
+  "short_name": "PumpPulse",
   "description": "Lightweight PWA for managing daily fuel station operations",
   "start_url": "./index.html",
   "scope": "./",

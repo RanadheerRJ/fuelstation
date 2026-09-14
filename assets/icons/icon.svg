@@ -1,44 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <!-- FuelOps Logo - Pumps + Human Kind - Owner & Attendant Handshake -->
-  <rect width="512" height="512" rx="120" fill="#1a2535"/>
-  <g transform="translate(90, 70)">
-    <!-- Pump -->
-    <g transform="translate(125, 0)">
-      <rect x="0" y="15" width="110" height="300" rx="24" fill="white"/>
-      <rect x="15" y="30" width="80" height="60" rx="12" fill="#1a2535"/>
-      <rect x="0" y="315" width="110" height="18" rx="8" fill="white"/>
-      <!-- Hose -->
-      <path d="M 110 45 Q 135 70 120 110 Q 105 140 120 170 Q 135 200 115 240" stroke="white" stroke-width="12" fill="none" stroke-linecap="round"/>
-      <path d="M 110 35 L 135 15 L 150 25 L 125 50 Z" fill="white"/>
-      <rect x="120" y="50" width="18" height="55" rx="8" fill="white"/>
-    </g>
-    <!-- Human 1 - Owner left -->
-    <g transform="translate(0, 30)">
-      <circle cx="55" cy="45" r="36" fill="#ff5a1f"/>
-      <path d="M 40 38 Q 55 28 70 38" stroke="#1a2535" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.8"/>
-      <circle cx="42" cy="48" r="4" fill="#1a2535"/>
-      <circle cx="68" cy="48" r="4" fill="#1a2535"/>
-      <path d="M 42 62 Q 55 70 68 62" stroke="#1a2535" stroke-width="3" fill="none" stroke-linecap="round"/>
-      <!-- Body -->
-      <path d="M 15 85 Q 15 75 55 75 Q 95 75 95 85 L 95 190 L 55 190 L 15 190 Z" fill="#ff5a1f"/>
-      <rect x="20" y="95" width="8" height="60" rx="4" fill="#1a2535" opacity="0.2"/>
-      <!-- Arm handshake -->
-      <path d="M 70 110 Q 95 125 115 135 L 145 150 L 135 175 L 105 165 Q 80 155 60 135 Z" fill="#ff5a1f" stroke="#1a2535" stroke-width="6" stroke-linejoin="round"/>
-    </g>
-    <!-- Human 2 - Attendant right -->
-    <g transform="translate(185, 30)">
-      <circle cx="55" cy="45" r="36" fill="#ff5a1f"/>
-      <circle cx="42" cy="48" r="4" fill="#1a2535"/>
-      <circle cx="68" cy="48" r="4" fill="#1a2535"/>
-      <path d="M 42 62 Q 55 70 68 62" stroke="#1a2535" stroke-width="3" fill="none" stroke-linecap="round"/>
-      <path d="M 15 85 Q 15 75 55 75 Q 95 75 95 85 L 95 190 L 55 190 L 15 190 Z" fill="#ff5a1f"/>
-      <!-- Arm handshake left -->
-      <path d="M 25 135 L 0 145 L -10 170 L 20 165 Q 45 155 60 135 Z" fill="#ff5a1f" stroke="#1a2535" stroke-width="6" stroke-linejoin="round"/>
-    </g>
-    <!-- Handshake detail -->
-    <g transform="translate(115, 165)">
-      <ellipse cx="35" cy="15" rx="30" ry="18" fill="#ff9a6b" stroke="#1a2535" stroke-width="4"/>
-      <path d="M 10 10 Q 20 5 30 10 M 20 18 Q 30 13 40 18 M 30 26 Q 40 21 50 26" stroke="#1a2535" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-    </g>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="PumpPulse">
+  <!-- PumpPulse — a fuel droplet with a live pulse line running through it.
+       Content is kept inside the ~80% safe circle so the PWA maskable crop is clean. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f2c3f"/>
+      <stop offset="100%" stop-color="#131c29"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ff9057"/>
+      <stop offset="100%" stop-color="#ff5a1f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+
+  <!-- Droplet -->
+  <path d="M256 116
+           C 256 116, 366 230, 366 310
+           a 110 110 0 0 1 -220 0
+           C 146 230, 256 116, 256 116 Z"
+        fill="url(#drop)"/>
+
+  <!-- Soft highlight -->
+  <path d="M208 232 C 190 264, 185 292, 189 314"
+        stroke="#ffffff" stroke-opacity="0.32" stroke-width="14"
+        stroke-linecap="round" fill="none"/>
+
+  <!-- Pulse / ECG line -->
+  <path d="M170 312 H 218 L 239 264 L 270 356 L 293 312 H 342"
+        stroke="#ffffff" stroke-width="23"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

@@ -186,7 +186,7 @@ export async function shiftDetailView({ root, params }) {
         await fn();
         await refresh();
       } catch (e) {
-        console.error('[FuelOps] save failed', e);
+        console.error('[PumpPulse] save failed', e);
         showErr(slotId, e?.message || 'Could not save. Check your connection and try again.');
         btn.disabled = false;
         btn.textContent = label;
@@ -264,7 +264,7 @@ export async function shiftDetailView({ root, params }) {
 
         <div class="neu-card" style="padding:0;overflow:hidden;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
           <div style="background:#232f3e;color:white;padding:18px;display:flex;justify-content:space-between;align-items:center">
-            <div><div style="font-weight:800;font-size:18px;letter-spacing:0.5px">FuelOps</div><div style="font-size:11px;opacity:0.8;margin-top:3px">Shift Receipt • ${stationName}</div></div>
+            <div><div style="font-weight:800;font-size:18px;letter-spacing:0.5px">PumpPulse</div><div style="font-size:11px;opacity:0.8;margin-top:3px">Shift Receipt • ${stationName}</div></div>
             <div style="text-align:right"><div style="font-size:11px;opacity:0.8">Shift ID</div><div style="font-weight:700;font-size:14px">#${shift.id.slice(0,6).toUpperCase()}</div><div style="font-size:10px;margin-top:6px"><span class="badge" style="background:${shift.status==='APPROVED'?'#52c41a': shift.status==='PENDING_REVIEW'?'#faad14':'#ff4d4f'};color:white;border:none;font-size:10px;padding:6px 10px;border-radius:20px">${shift.status}</span></div></div>
           </div>
           <div style="padding:16px;background:#f8f9fa;border-bottom:1px solid #eee">
@@ -356,7 +356,7 @@ export async function shiftDetailView({ root, params }) {
             ${expenses.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Expenses • ${formatCurrency(totalExpenses)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="expense" data-field="expenses" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${e.category}</span><span style="font-weight:600">${formatCurrency(e.amount)}</span></div>`).join('')}</div>` : ''}
             ${notes.length ? `<div style="margin-top:18px;padding:12px;background:#fffbe6;border-radius:10px;border:0.5px solid #ffe58f"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#ad6800;margin-bottom:8px">Note</div><div style="font-size:13px;line-height:1.4">${notes[0]?.text||''}</div></div>` : ''}
           </div>
-          <div style="padding:14px 18px;background:#f8f9fa;border-top:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-tertiary)">Thank you • FuelOps • ${stationName}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">Generated ${new Date().toLocaleString('en-IN')}</div></div>
+          <div style="padding:14px 18px;background:#f8f9fa;border-top:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-tertiary)">Thank you • PumpPulse • ${stationName}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">Generated ${new Date().toLocaleString('en-IN')}</div></div>
         </div>
 
         ${isPending && canReview ? `

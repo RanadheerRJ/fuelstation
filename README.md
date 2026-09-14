@@ -1,4 +1,4 @@
-# FuelOps - Fuel Station Daily Operations PWA
+# PumpPulse - Fuel Station Daily Operations PWA
 
 A beautiful, lightweight, mobile-first Progressive Web App for managing daily fuel-station operations. Built with vanilla HTML/CSS/JS, Firebase, and designed for GitHub Pages.
 
@@ -83,7 +83,7 @@ No build step needed.
 ## 🗂️ File Structure
 
 ```
-fuelops/
+pumppulse/
 ├── index.html
 ├── manifest.json
 ├── service-worker.js
@@ -135,6 +135,13 @@ fuelops/
   - No role escalation
 - Phone → Email mapping: `+91XXXXXXXXXX` → `+91XXXXXXXXXX@fuelops.app`
 - Password derivation: `FuelOps#<PIN>#2024` (6+ chars required by Firebase, actual length 16+)
+
+> **Note on the legacy `fuelops` name:** the app is branded **PumpPulse**, but three
+> groups of identifiers deliberately still contain `fuelops` and must not be renamed:
+> the derived Auth email domain (`@fuelops.app`), the password formula
+> (`FuelOps#<PIN>#2024`), the Firebase project (`fuelops-a93f6`), and the
+> `fuelops_*` localStorage keys. Changing any of them would lock out existing
+> users or orphan data already on their devices.
 
 For higher security, you can later switch to:
 - Firebase Phone OTP for login + custom claims for role

@@ -100,7 +100,7 @@ export async function settingsView({ root }) {
       <div class="neu-card" style="margin-top:16px">
         <h3 style="font-weight:700">App Info</h3>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;line-height:1.5">
-          <p>FuelOps • iOS Clean • Simple • Invite Only</p>
+          <p>PumpPulse • iOS Clean • Simple • Invite Only</p>
           <p>Mode: <b>${isDemo ? 'Local Storage (Demo)' : 'Firebase Firestore Live'}</b></p>
           <p>Station: ${currentStation?.name || 'None'} • Role: ${user?.role}</p>
           <p>Build: v18 • Owner only destroy, no audit log</p>

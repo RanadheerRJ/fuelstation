@@ -1,4 +1,4 @@
-// FuelOps Main App
+// PumpPulse Main App
 import { initFirebase, getIsDemo, getFirebaseStatus } from './firebase.js';
 import { getState, subscribe } from './state.js';
 import { initRouter, registerRoute, navigate } from './router.js';
@@ -27,7 +27,7 @@ const refreshTop = document.getElementById('refreshTop');
 
 async function bootstrap() {
   await initFirebase();
-  console.log('[FuelOps] Firebase status', getFirebaseStatus());
+  console.log('[PumpPulse] Firebase status', getFirebaseStatus());
 
   // Register routes (hash based)
   registerRoute('/login', loginView);
