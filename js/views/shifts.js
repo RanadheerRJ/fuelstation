@@ -6,7 +6,7 @@ import { getActivePrices } from '../services/prices.js';
 import { getTransactions, addCredit, addExpense } from '../services/transactions.js';
 import { addNote, getNotes } from '../services/notes.js';
 import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue } from '../services/calc.js';
-import { collectFromShift, getHideBalancePref } from '../services/collections.js';
+// Collections removed - no jackpot
 
 export async function shiftsListView({ root }) {
   const { user, currentStationId } = getState();
@@ -37,7 +37,7 @@ export async function shiftsListView({ root }) {
       if (absV>0.5) {
         if (v<0) {
           if (sh.userId===user.uid) varText = `💸 To Handover ${formatCurrency(absV)}`;
-          else varText = `💰 To Collect ${formatCurrency(absV)} from ${sh.employeeName.split(' ')[0]}`;
+          else varText = `💸 To Handover ${formatCurrency(absV)} by ${sh.employeeName.split(' ')[0]}`;
         } else {
           if (sh.userId===user.uid) varText = `💰 Excess ${formatCurrency(absV)}`;
           else varText = `↩️ Excess ${formatCurrency(absV)} to ${sh.employeeName.split(' ')[0]}`;
@@ -384,14 +384,14 @@ export async function shiftDetailView({ root, params }) {
                   } else if (netVariance < -0.5) {
                     amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💸 To Handover to Owner'; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to give • Owner will collect after approval • Testing reduces whole balance`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = '💸 To Handover to Owner'; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to give • Owner will receive after approval • Testing reduces whole balance`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     } else {
-                      label = `💰 To Collect from ${shift.employeeName}`; desc = `Net ${formatCurrency(net)} - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to collect from ${shift.employeeName} after approval • Expenses reduce whole amount`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = `💸 To Handover to Owner`; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to handover • Simple, no jackpot`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     }
                   } else {
                     amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💰 Excess with You'; desc = `You collected ${formatCurrency(absNet)} extra over net ${formatCurrency(net)} • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                      label = '💰 Excess with You'; desc = `You have ${formatCurrency(absNet)} extra over net ${formatCurrency(net)} • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     } else {
                       label = `↩️ Excess to Return to ${shift.employeeName}`; desc = `Return ${formatCurrency(absNet)} to ${shift.employeeName} • Net ${formatCurrency(net)}`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     }
@@ -400,27 +400,7 @@ export async function shiftDetailView({ root, params }) {
                 })()}
               </div>
             </div>
-            ${(() => {
-              if (shift.status !== 'APPROVED') return '';
-              const v = t.variance||0;
-              const absV = Math.abs(v);
-              if (absV < 0.5) return '';
-              const collected = shift.settlement?.collectedAmount||0;
-              const returned = shift.settlement?.returnedAmount||0;
-              const isShort = v < -0.5;
-              const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
-              const isSettled = pending <= 0.5;
-              const hideBal = getHideBalancePref(shift.stationId);
-              const fmt = (val) => hideBal ? '••••' : formatCurrency(val);
-              if (isSettled) {
-                return `<div style="margin-top:14px;padding:12px;background:#f6ffed;border-radius:10px;border:1px solid #b7eb8f"><div style="font-size:12px;font-weight:700;color:#389e0d">✅ Settled • ${isShort ? 'Collected' : 'Returned'} ${fmt(isShort?collected:returned)}</div><div style="font-size:10px;color:var(--text-secondary);margin-top:4px">By ${shift.settlement?.collectedByName||shift.settlement?.returnedByName||'Owner'} • ${shift.settlement?.settledAt? new Date(shift.settlement.settledAt).toLocaleString():''}</div></div>`;
-              }
-              if (!canReview) return `<div style="margin-top:14px;padding:12px;background:#fff1f0;border-radius:10px;border:1px solid #ffa39e"><div style="font-size:12px;font-weight:600;color:#cf1322">⏳ Pending Collection • ${fmt(pending)} ${isShort?'to collect from staff':'to return to staff'}</div><div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Owner will collect soon</div></div>`;
-              return `<div style="margin-top:14px;padding:14px;background:#fff1f0;border-radius:12px;border:1.5px solid #ffa39e">
-                <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#cf1322">${isShort?'💰 To Collect':'↩️ To Return'}</div><div style="font-weight:800;font-size:16px;color:#cf1322;margin-top:2px">${fmt(pending)} pending</div><div style="font-size:10px;color:var(--text-secondary)">Total ${fmt(absV)} • ${isShort?`Collected ${fmt(collected)}`:`Returned ${fmt(returned)}`}</div></div><button id="collectThisShift" class="neu-btn neu-btn--primary" style="min-height:44px;padding:0 16px;border-radius:10px;font-weight:700;background:#52c41a;border-color:#52c41a">${isShort?'Collect':'Return'}</button></div>
-                <div style="margin-top:10px;display:flex;gap:8px"><button id="collectFull" class="neu-btn" style="flex:1;min-height:40px;border-radius:10px;font-size:12px;font-weight:600;background:#52c41a;color:white;border:none">Collect Full ${fmt(pending)}</button><button class="neu-btn" style="flex:1;min-height:40px;border-radius:10px;font-size:12px" onclick="location.hash='#/collections'">Go to Collections</button></div>
-              </div>`;
-            })()}
+            <div style="margin-top:14px;padding:10px;background:#f8f9fa;border-radius:10px;border:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">✅ Simple: No jackpot collections • To Handover = Net - Payments • Check Reports for totals</div></div>
             ${credits.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Credits • ${formatCurrency(totalCredits)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="credit" data-field="credits" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${c.customer}</span><span style="font-weight:600">${formatCurrency(c.amount)}</span></div>`).join('')}</div>` : ''}
             ${expenses.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Expenses • ${formatCurrency(totalExpenses)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="expense" data-field="expenses" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${e.category}</span><span style="font-weight:600">${formatCurrency(e.amount)}</span></div>`).join('')}</div>` : ''}
             ${notes.length ? `<div style="margin-top:18px;padding:12px;background:#fffbe6;border-radius:10px;border:0.5px solid #ffe58f"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#ad6800;margin-bottom:8px">Note</div><div style="font-size:13px;line-height:1.4">${notes[0]?.text||''}</div></div>` : ''}
@@ -501,39 +481,7 @@ export async function shiftDetailView({ root, params }) {
       });
     }
 
-    root.querySelector('#collectThisShift')?.addEventListener('click', async ()=>{
-      const v = t.variance||0;
-      const absV = Math.abs(v);
-      const isShort = v < -0.5;
-      const collected = shift.settlement?.collectedAmount||0;
-      const returned = shift.settlement?.returnedAmount||0;
-      const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
-      const amountStr = prompt(`${isShort?'Collect from':'Return to'} ${shift.employeeName}: Enter amount (pending ${formatCurrency(pending)}):`, pending.toFixed(2));
-      if (!amountStr) return;
-      const amount = Number(amountStr);
-      if (isNaN(amount) || amount<=0) return alert('Invalid amount');
-      if (amount > pending + 0.01) return alert(`Cannot ${isShort?'collect':'return'} more than pending ${formatCurrency(pending)}`);
-      const notes = prompt('Notes (optional):', isShort?`Collected from ${shift.employeeName}`:`Returned to ${shift.employeeName}`) || '';
-      try {
-        await collectFromShift(shift.id, amount, notes, isShort?'collect':'return');
-        alert(`✅ ${formatCurrency(amount)} ${isShort?'collected from':'returned to'} ${shift.employeeName}`);
-        location.reload();
-      } catch(e){ alert(e.message); }
-    });
-    root.querySelector('#collectFull')?.addEventListener('click', async ()=>{
-      const v = t.variance||0;
-      const absV = Math.abs(v);
-      const isShort = v < -0.5;
-      const collected = shift.settlement?.collectedAmount||0;
-      const returned = shift.settlement?.returnedAmount||0;
-      const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
-      if (!confirm(`Collect full ${formatCurrency(pending)} ${isShort?'from':'to'} ${shift.employeeName}?`)) return;
-      try {
-        await collectFromShift(shift.id, pending, `Full settlement for shift`, isShort?'collect':'return');
-        alert(`✅ Settled! ${formatCurrency(pending)} ${isShort?'collected':'returned'}`);
-        location.reload();
-      } catch(e){ alert(e.message); }
-    });
+    // Collections removed - no jackpot collect buttons, simple To Handover in receipt only
 
     root.querySelector('#approveBtn')?.addEventListener('click', async ()=>{
       if (!confirm('Approve this shift?')) return;
@@ -708,7 +656,7 @@ export async function closeShiftView({ root, params }) {
       if (cash > 0.5) {
         // Physical cash to give now is cashAfterExpenses, but total short is net - payments
         // For simplicity, toHandover = cashAfterExpenses if cashAfterExpenses <= absVariance, else absVariance
-        // Actually correct: attendant gives cashAfterExpenses now, remaining short tracked as To Collect
+        // Actually correct: attendant gives cashAfterExpenses now, remaining short tracked as To Handover
         // But user wants expense to reduce whole balance, so toHandover = net - payments
         toHandover = Math.max(0, netRevenue - totalPayments);
       }
@@ -716,7 +664,7 @@ export async function closeShiftView({ root, params }) {
       // EXCESS
       toHandover = cashAfterExpenses;
       toHandoverLabel = '💰 Excess with You';
-      varDesc = `You collected ${formatCurrency(absVariance)} extra over net revenue ${formatCurrency(netRevenue)} • Cash after expenses ${formatCurrency(cashAfterExpenses)} to handover (excess will be returned)`;
+      varDesc = `You have ${formatCurrency(absVariance)} extra over net revenue ${formatCurrency(netRevenue)} • Cash after expenses ${formatCurrency(cashAfterExpenses)} to handover (excess will be returned)`;
       varBg = '#f6ffed'; varBorder = '#b7eb8f'; varColor = '#389e0d';
     }
 
@@ -796,7 +744,7 @@ export async function closeShiftView({ root, params }) {
       if (isDirectApprove && canReview) {
         // Admin fixing and approving directly
         await approveShift(shift.id);
-        alert(`✅ Fixed and Approved! Owner will collect money now.`);
+        alert(`✅ Fixed and Approved! Owner will receive money now.`);
         location.hash = `#/shifts/${shift.id}`;
       } else {
         location.hash = `#/shifts/${shift.id}`;
@@ -806,7 +754,7 @@ export async function closeShiftView({ root, params }) {
 
   root.querySelector('#submitClose').addEventListener('click', ()=> handleSubmit(false));
   root.querySelector('#adminApprove')?.addEventListener('click', ()=> {
-    if (!confirm(`Admin: Fix and Approve directly?\n\nThis will:\n• Fix what's wrong\n• Approve shift\n• Owner can collect money now\n\nContinue?`)) return;
+    if (!confirm(`Admin: Fix and Approve directly?\n\nThis will:\n• Fix what's wrong\n• Approve shift\n• Owner can handover now\n\nContinue?`)) return;
     handleSubmit(true);
   });
 }

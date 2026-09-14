@@ -4,7 +4,7 @@ import { getReportForRange } from '../services/reports.js';
 import { getShifts } from '../services/shifts.js';
 import { formatCurrency, formatLiters, formatDate } from '../services/calc.js';
 import { getEmployees } from '../services/users.js';
-import { getHideBalancePref } from '../services/collections.js';
+// Collections removed - no jackpot
 
 export async function reportsView({ root, query }) {
   const { user, currentStationId } = getState();
@@ -53,10 +53,9 @@ export async function reportsView({ root, query }) {
     status: statusFilter,
   });
 
-  const hideBalance = getHideBalancePref(stationId);
-  const fmt = (v) => hideBalance ? '••••' : formatCurrency(v);
-  const fmtLit = (v) => hideBalance ? '••••' : formatLiters(v);
-  const fmtNum = (v) => hideBalance ? '••••' : Number(v||0).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const fmt = (v) => formatCurrency(v);
+  const fmtLit = (v) => formatLiters(v);
+  const fmtNum = (v) => Number(v||0).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
   const rangeLabel = fromDate===todayStr && toDate===todayStr ? 'Today' :
                      fromDate===yesterdayStr && toDate===yesterdayStr ? 'Yesterday' :
@@ -109,7 +108,7 @@ export async function reportsView({ root, query }) {
               <div style="font-size:9px;opacity:0.6;margin-top:2px">Testing etc - fuel out</div>
             </div>
             <div style="background:rgba(82,196,26,0.15);border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(82,196,26,0.3)">
-              <div style="font-size:10px;opacity:0.8;color:#95de64">TO COLLECT</div>
+              <div style="font-size:10px;opacity:0.8;color:#95de64">TO HANDOVER</div>
               <div style="font-size:13px;font-weight:700;margin-top:2px;color:#95de64">${fmt(report.toCollect)}</div>
               <div style="font-size:9px;opacity:0.6;margin-top:2px">${report.pendingCollect>0? fmt(report.pendingCollect)+' pending' : 'All settled'}</div>
             </div>
@@ -267,7 +266,7 @@ export async function reportsView({ root, query }) {
                 <div style="width:36px;height:36px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:12px">${emp.employeeName.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
                 <div>
                   <div style="font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px">${emp.employeeName} ${idx===0 ? '👑' : ''}</div>
-                  <div style="font-size:11px;color:var(--text-secondary)">${emp.shifts} shifts • To Collect ${fmt(emp.toCollect)}</div>
+                  <div style="font-size:11px;color:var(--text-secondary)">${emp.shifts} shifts • To Handover ${fmt(emp.toCollect)}</div>
                 </div>
               </div>
               <div style="text-align:right">
@@ -319,19 +318,11 @@ export async function reportsView({ root, query }) {
           <button id="loadMore" style="min-height:32px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:11px;font-weight:600;cursor:pointer">Load 50 more</button>
         </div>
         <div id="shiftsList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:700px;overflow:auto">
-          ${renderShiftsBanking(report.shifts.slice(0,30), report.expenseByShift, hideBalance)}
+          ${renderShiftsBanking(report.shifts.slice(0,30), report.expenseByShift)}
         </div>
       </div>
 
-      ${isOwner ? `
-      <div style="margin-top:16px;background:white;border-radius:16px;padding:16px;border:1px solid var(--border)">
-        <div style="font-size:13px;font-weight:800">💰 Collections in range • ${fmt(report.settlements.reduce((a,s)=>a+Number(s.amount||0),0))} • ${report.settlements.length} records</div>
-        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:200px;overflow:auto">
-          ${report.settlements.slice(0,20).map(s=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:8px 10px;background:var(--bg);border-radius:8px"><span>${s.staffName} • ${s.type}</span><span style="font-weight:600">${fmt(s.amount)} • ${new Date(s.createdAt).toLocaleDateString()}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No collections in range</p>`}
-        </div>
-        <button style="margin-top:10px;min-height:44px;border-radius:12px;width:100%;background:#f8f9fa;border:1px solid var(--border);font-weight:600;cursor:pointer" onclick="location.hash='#/collections'">Go to Collections →</button>
-      </div>
-      ` : ''}
+      
 
       <!-- Explain -->
       <div style="margin-top:16px;padding:12px;background:#fffbe6;border-radius:12px;border:1px solid #ffe58f;font-size:11px;line-height:1.5">
@@ -340,9 +331,9 @@ export async function reportsView({ root, query }) {
           • <b>Gross Sales</b> = sum of (closing - opening) × price from nozzles = fuel that came out<br>
           • <b>Expenses (Testing etc)</b> = fuel that came out but not sold, so <b>minus from gross</b><br>
           • <b>Net Sales = Gross - Expenses</b> = <b>whole amount to owner</b> (what owner should get)<br>
-          • <b>To Collect = Net - Payments (UPI/Cash/Card)</b> = what attendant must handover<br>
+          • <b>To Handover = Net - Payments (UPI/Cash/Card)</b> = what attendant must handover<br>
           • <b>Liters</b> = total liters sold (gross liters). Filter by Today/Month/All Time to see liters per day/month/overall.<br>
-          • Colors: Gross (gray) - Expenses (orange) = Net (green) • To Collect (red)
+          • Colors: Gross (gray) - Expenses (orange) = Net (green) • To Handover (red)
         </div>
       </div>
     </div>
@@ -352,7 +343,7 @@ export async function reportsView({ root, query }) {
   let visible = 30;
   root.querySelector('#loadMore')?.addEventListener('click', ()=>{
     visible += 50;
-    root.querySelector('#shiftsList').innerHTML = renderShiftsBanking(report.shifts.slice(0, visible), report.expenseByShift, hideBalance);
+    root.querySelector('#shiftsList').innerHTML = renderShiftsBanking(report.shifts.slice(0, visible), report.expenseByShift);
   });
   root.querySelector('#exportBtn').addEventListener('click', ()=> exportCSV(report, `report-${fromDate}-${toDate}-${employeeFilter}`));
 }
@@ -446,9 +437,9 @@ function attachBankingHandlers(root, stationId) {
   });
 }
 
-function renderShiftsBanking(shifts, expenseByShift, hideBalance) {
-  const fmt = (v) => hideBalance ? '••••' : formatCurrency(v);
-  const fmtLit = (v) => hideBalance ? '••••' : formatLiters(v);
+function renderShiftsBanking(shifts, expenseByShift) {
+  const fmt = (v) => formatCurrency(v);
+  const fmtLit = (v) => formatLiters(v);
   if (!shifts.length) return `<p style="font-size:12px;color:var(--text-secondary);padding:20px;text-align:center">No shifts in this range • Try different date</p>`;
   return shifts.map(s=>{
     const gross = Number(s.totals?.totalRevenue||0);
@@ -456,7 +447,7 @@ function renderShiftsBanking(shifts, expenseByShift, hideBalance) {
     const net = Math.round((gross - exp)*100)/100;
     const liters = Number(s.totals?.totalLiters||0);
     const payments = Number(s.totals?.totalPayments||0);
-    const toCollect = Math.round((net - payments)*100)/100;
+    const toHandoverVal = Math.round((net - payments)*100)/100;
     const statusColor = s.status==='APPROVED' ? '#52c41a' : s.status==='PENDING_REVIEW' ? '#faad14' : s.status==='REJECTED' ? '#ff4d4f' : '#1890ff';
     return `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8f9fa;border-radius:12px;cursor:pointer;border-left:3px solid ${statusColor}" onclick="location.hash='#/shifts/${s.id}'">
@@ -466,7 +457,7 @@ function renderShiftsBanking(shifts, expenseByShift, hideBalance) {
       </div>
       <div style="text-align:right">
         <div style="font-weight:700;font-size:13px">${fmt(net)}</div>
-        <div style="font-size:10px;color:${toCollect>0.5?'#cf1322':'#389e0d'}">${toCollect>0.5 ? 'To Collect '+fmt(toCollect) : toCollect<-0.5 ? 'To Return '+fmt(Math.abs(toCollect)) : 'Balanced'}</div>
+        <div style="font-size:10px;color:${toHandoverVal>0.5?'#cf1322':'#389e0d'}">${toHandoverVal>0.5 ? 'To Handover '+fmt(toHandoverVal) : toHandoverVal<-0.5 ? 'To Return '+fmt(Math.abs(toHandoverVal)) : 'Balanced'}</div>
       </div>
     </div>
   `}).join('');
@@ -474,20 +465,20 @@ function renderShiftsBanking(shifts, expenseByShift, hideBalance) {
 
 function exportCSV(report, name) {
   let csv = `FuelOps Banking Report,${report.fromDate} to ${report.toDate},${report.count} shifts\n`;
-  csv += `Total Gross,${report.totalGross}\nTotal Expenses (fuel out but not sale),${report.totalExpenses}\nTotal Net (whole amount to owner),${report.totalNet}\nTotal Liters,${report.totalLiters}\nTotal Payments,${report.totalPayments}\nTo Collect (Net - Payments),${report.toCollect}\nCollected,${report.collected}\nPending Collect,${report.pendingCollect}\n\n`;
+  csv += `Total Gross,${report.totalGross}\nTotal Expenses (fuel out but not sale),${report.totalExpenses}\nTotal Net (whole amount to owner),${report.totalNet}\nTotal Liters,${report.totalLiters}\nTotal Payments,${report.totalPayments}\nTo Handover (Net - Payments),${report.toCollect}\nCollected,${report.collected}\nPending Collect,${report.pendingCollect}\n\n`;
   csv += `By Fuel\nFuel, Liters, Gross, Net, Shifts\n`;
   Object.entries(report.byFuel).forEach(([ft,v])=>{ csv += `${ft},${v.liters},${v.gross},${v.net},${v.shifts}\n`; });
-  csv += `\nBy Employee - Liters Ranking\nEmployee,Shifts,Liters,Gross,Expenses,Net,ToCollect\n`;
+  csv += `\nBy Employee - Liters Ranking\nEmployee,Shifts,Liters,Gross,Expenses,Net,ToHandover\n`;
   Object.values(report.byEmployee).sort((a,b)=>b.liters-a.liters).forEach(emp=>{ csv += `${emp.employeeName},${emp.shifts},${emp.liters},${emp.gross},${emp.expenses},${emp.net},${emp.toCollect}\n`; });
   csv += `\nDaily\nDate,Shifts,Liters,Gross,Expenses,Net\n`;
   Object.values(report.byDate).sort((a,b)=>b.date.localeCompare(a.date)).forEach(d=>{ csv += `${d.date},${d.shifts},${d.liters},${d.gross},${d.expenses},${d.net}\n`; });
-  csv += `\nShifts - Net = Gross - Expenses = whole amount to owner\nEmployee,Start,End,Status,Liters,Gross,Expenses,Net,Payments,ToCollect\n`;
+  csv += `\nShifts - Net = Gross - Expenses = whole amount to owner\nEmployee,Start,End,Status,Liters,Gross,Expenses,Net,Payments,ToHandover\n`;
   report.shifts.forEach(s=>{
     const exp = report.expenseByShift[s.id]||0;
     const gross = s.totals?.totalRevenue||0;
     const net = gross - exp;
-    const toCollect = net - (s.totals?.totalPayments||0);
-    csv += `${s.employeeName},${s.startTime},${s.endTime||''},${s.status},${s.totals?.totalLiters||0},${gross},${exp},${net},${s.totals?.totalPayments||0},${toCollect}\n`;
+    const toHandover = net - (s.totals?.totalPayments||0);
+    csv += `${s.employeeName},${s.startTime},${s.endTime||''},${s.status},${s.totals?.totalLiters||0},${gross},${exp},${net},${s.totals?.totalPayments||0},${toHandover}\n`;
   });
   const blob = new Blob([csv], { type:'text/csv' });
   const url = URL.createObjectURL(blob);
