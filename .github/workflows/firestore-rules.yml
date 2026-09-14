@@ -1,0 +1,82 @@
+name: Firestore Rules
+
+# Two jobs:
+#   test   - runs automatically whenever the rules or their tests change.
+#   deploy - NEVER automatic. You trigger it by hand from the Actions tab, and
+#            it re-runs the tests first and refuses to deploy if they fail.
+
+on:
+  push:
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/**'
+      - '.github/workflows/firestore-rules.yml'
+  pull_request:
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/**'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Type "deploy" to also publish indexes + rules to fuelops-a93f6'
+        required: false
+        default: ''
+
+jobs:
+  test:
+    name: Test rules against emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The Firestore emulator is a JVM process.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Cache emulator binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      # Runs against a throwaway project id, never the real one.
+      - name: Run rules test suite
+        run: npx firebase emulators:exec --only firestore --project fuelops-test "node tests/firestore-rules.test.mjs"
+
+  deploy:
+    name: Deploy indexes + rules
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Indexes MUST land before rules: the app issues composite queries that
+      # fail until the indexes exist.
+      - name: Deploy indexes
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: npx firebase deploy --only firestore:indexes --project fuelops-a93f6 --non-interactive
+
+      - name: Deploy rules
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: npx firebase deploy --only firestore:rules --project fuelops-a93f6 --non-interactive
