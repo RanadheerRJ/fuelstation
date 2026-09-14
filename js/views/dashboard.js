@@ -342,9 +342,9 @@ export async function dashboardView({ root }) {
       <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
         <div>
-          <div style="font-size:11px;color:var(--text-secondary);letter-spacing:0.8px;text-transform:uppercase">${getGreeting().toUpperCase()} • ${formatBusinessDate(new Date())}</div>
+          <div style="font-size:11px;color:var(--text-secondary);letter-spacing:0.8px;text-transform:uppercase">${formatBusinessDate(new Date())}</div>
           <h1 style="font-size:20px;font-weight:800;letter-spacing:-0.4px;margin-top:4px;line-height:1.25">⛽ ${activeStation.name}</h1>
-          <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">${user.name?.split(' ')[0] || 'Owner'} 👋</p>
+          <p style="font-size:13px;color:var(--text-secondary);margin-top:4px">Good ${getGreeting()} ${user.name?.split(' ')[0] || 'Owner'} ${getGreetingEmoji()}</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           ${stations.length>1 ? `<select id="stationSwitch" style="min-height:40px;border-radius:12px;border:1.5px solid var(--border);padding:0 10px;font-size:12px;font-weight:600;background:white;max-width:110px">${stations.map(s=>`<option value="${s.id}" ${s.id===activeStation.id?'selected':''}>${s.name}</option>`).join('')}</select>` : ''}
@@ -452,6 +452,14 @@ export async function dashboardView({ root }) {
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });
 
+}
+
+// Emoji tracks the time of day so the line reads naturally morning vs night.
+function getGreetingEmoji(){
+  const h = new Date().getHours();
+  if (h<12) return '☀️';
+  if (h<17) return '🌤️';
+  return '🌙';
 }
 
 function getGreeting(){
