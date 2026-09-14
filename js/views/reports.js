@@ -110,7 +110,7 @@ export async function reportsView({ root, query }) {
             <div style="background:rgba(82,196,26,0.15);border-radius:12px;padding:10px;text-align:center;border:1px solid rgba(82,196,26,0.3)">
               <div style="font-size:10px;opacity:0.8;color:#95de64">TO HANDOVER</div>
               <div style="font-size:13px;font-weight:700;margin-top:2px;color:#95de64">${fmt(report.toCollect)}</div>
-              <div style="font-size:9px;opacity:0.6;margin-top:2px">${report.pendingCollect>0? fmt(report.pendingCollect)+' pending' : 'All settled'}</div>
+              <div style="font-size:9px;opacity:0.6;margin-top:2px">${report.pendingCollect>0? fmt(report.pendingCollect)+' to handover' : 'All settled'}</div>
             </div>
           </div>
         </div>
@@ -465,10 +465,10 @@ function renderShiftsBanking(shifts, expenseByShift) {
 
 function exportCSV(report, name) {
   let csv = `FuelOps Banking Report,${report.fromDate} to ${report.toDate},${report.count} shifts\n`;
-  csv += `Total Gross,${report.totalGross}\nTotal Expenses (fuel out but not sale),${report.totalExpenses}\nTotal Net (whole amount to owner),${report.totalNet}\nTotal Liters,${report.totalLiters}\nTotal Payments,${report.totalPayments}\nTo Handover (Net - Payments),${report.toCollect}\nCollected,${report.collected}\nPending Collect,${report.pendingCollect}\n\n`;
+  csv += `Total Gross,${report.totalGross}\nTotal Expenses (fuel out but not sale),${report.totalExpenses}\nTotal Net (whole amount to owner),${report.totalNet}\nTotal Liters,${report.totalLiters}\nTotal Payments,${report.totalPayments}\nTo Handover (Net - Payments),${report.toCollect}\n\n`;
   csv += `By Fuel\nFuel, Liters, Gross, Net, Shifts\n`;
   Object.entries(report.byFuel).forEach(([ft,v])=>{ csv += `${ft},${v.liters},${v.gross},${v.net},${v.shifts}\n`; });
-  csv += `\nBy Employee - Liters Ranking\nEmployee,Shifts,Liters,Gross,Expenses,Net,ToHandover\n`;
+  csv += `\nBy Employee - Liters Ranking\nEmployee,Shifts,Liters,Gross,Expenses,Net,To Handover\n`;
   Object.values(report.byEmployee).sort((a,b)=>b.liters-a.liters).forEach(emp=>{ csv += `${emp.employeeName},${emp.shifts},${emp.liters},${emp.gross},${emp.expenses},${emp.net},${emp.toCollect}\n`; });
   csv += `\nDaily\nDate,Shifts,Liters,Gross,Expenses,Net\n`;
   Object.values(report.byDate).sort((a,b)=>b.date.localeCompare(a.date)).forEach(d=>{ csv += `${d.date},${d.shifts},${d.liters},${d.gross},${d.expenses},${d.net}\n`; });

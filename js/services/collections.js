@@ -1,3 +1,4 @@
+// DEPRECATED - Collections removed, jackpot confusing, now simple To Handover only - kept for backward compat, not used in UI
 import { listDocs, addDocTo, updateDocById, queryDocs, getDocById } from './firestoreService.js';
 import { getState } from '../state.js';
 

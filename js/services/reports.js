@@ -92,7 +92,7 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
     const payments = Number(t.totalPayments||0);
     totalPayments += payments;
 
-    // Variance now based on NET, not gross: Payments - Net = what is still to collect
+    // Variance now based on NET, not gross: Payments - Net = what is still to handover
     const netVariance = Math.round((payments - net)*100)/100;
     variance += netVariance;
 
