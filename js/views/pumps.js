@@ -415,7 +415,7 @@ export async function pumpsView({ root }) {
       if (!pumpId || !number) return alert('Fill required');
       try {
         if (existing) await updateNozzle(existing.id, { pumpId, number: Number(number), fuelType, lastReading: Number(lastReading), status });
-        else await createNozzle(station.id, pumpId, { number: Number(number), fuelType, lastReading: Number(lastReading), status });
+        else await createNozzle(station.id, pumpId, { number: Number(number), fuelType, lastReading, status }); // lastReading raw: validated in the service
         modalRoot.innerHTML=''; pumpsView({ root });
       } catch(e){ alert(e.message); }
     });

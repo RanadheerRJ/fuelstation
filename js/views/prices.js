@@ -86,7 +86,8 @@ export async function pricesView({ root }) {
     modalRoot.querySelector('#savePrice').addEventListener('click', async ()=>{
       const val = modalRoot.querySelector('#priceInput').value;
       if (!val || isNaN(val) || Number(val)<=0) return alert('Invalid price');
-      try { await setPrice(stationId, fuelType, Number(val)); modalRoot.innerHTML=''; pricesView({ root }); } catch(e){ alert(e.message); }
+      // Pass the raw value: setPrice validates it and reports the actual bad input.
+      try { await setPrice(stationId, fuelType, val); modalRoot.innerHTML=''; pricesView({ root }); } catch(e){ alert(e.message); }
     });
   }
 }

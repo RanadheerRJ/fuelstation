@@ -728,9 +728,10 @@ export async function closeShiftView({ root, params }) {
     const closingReadings = {};
     for (const inp of closingInputs) {
       if (!inp.value) { root.querySelector('#alertBox').innerHTML=`<div class="alert alert--danger">Enter closing reading for all nozzles</div>`; return; }
-      closingReadings[inp.dataset.id] = Number(inp.value);
+      closingReadings[inp.dataset.id] = inp.value; // raw: closeShift validates and reports the actual bad input
     }
-    const payments = { cash: Number(root.querySelector('#pay_cash').value||0), card: Number(root.querySelector('#pay_card').value||0), upi: Number(root.querySelector('#pay_upi').value||0), credit: Number(root.querySelector('#pay_credit').value||0), other: Number(root.querySelector('#pay_other').value||0) };
+    // Raw strings: closeShift validates each one and names the offending field.
+    const payments = { cash: root.querySelector('#pay_cash').value, card: root.querySelector('#pay_card').value, upi: root.querySelector('#pay_upi').value, credit: root.querySelector('#pay_credit').value, other: root.querySelector('#pay_other').value };
     const closingNote = root.querySelector('#closingNote').value.trim();
 
     try {
