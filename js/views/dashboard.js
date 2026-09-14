@@ -107,9 +107,19 @@ export async function dashboardView({ root }) {
       });
     }
   });
+  // MS = Petrol, HSD = Diesel breakdown for small box
+  let msLitersAll = 0, hsdLitersAll = 0, otherLitersAll = 0;
+  Object.entries(fuelAgg).forEach(([ft, v])=>{
+    const f = ft.toLowerCase();
+    if (f.includes('petrol') || f.includes('ms')) msLitersAll += v.liters||0;
+    else if (f.includes('diesel') || f.includes('hsd')) hsdLitersAll += v.liters||0;
+    else otherLitersAll += v.liters||0;
+  });
 
   const todayShiftsMy = myShifts.filter(s=> new Date(s.startTime).toISOString().slice(0,10)===todayStr);
   let totalSalesMy = 0, totalLitersMy = 0, varianceMy = 0, toHandoverMy = 0, myGross = 0, myExp = 0;
+  let msLitersMy = 0, hsdLitersMy = 0;
+  const myFuelAgg = {};
   todayShiftsMy.forEach(s=>{ 
     const gross = s.totals?.totalRevenue||0;
     const exp = expenseMap[s.id]||0;
@@ -122,6 +132,17 @@ export async function dashboardView({ root }) {
     const netVar = payments - net;
     varianceMy += netVar;
     if (netVar < -0.5) toHandoverMy += Math.abs(netVar);
+    if (s.totals?.byFuel) {
+      Object.entries(s.totals.byFuel).forEach(([ft, v])=>{
+        if (!myFuelAgg[ft]) myFuelAgg[ft] = { liters:0 };
+        myFuelAgg[ft].liters += v.liters||0;
+      });
+    }
+  });
+  Object.entries(myFuelAgg).forEach(([ft, v])=>{
+    const f = ft.toLowerCase();
+    if (f.includes('petrol') || f.includes('ms')) msLitersMy += v.liters||0;
+    else if (f.includes('diesel') || f.includes('hsd')) hsdLitersMy += v.liters||0;
   });
 
   const activeShifts = allShifts.filter(s=>s.status==='ACTIVE');
@@ -189,9 +210,15 @@ export async function dashboardView({ root }) {
                 <div style="font-size:10px;opacity:0.5;margin-top:4px">Gross ${formatCurrency(myGross)} - Exp ${formatCurrency(myExp)} = Net • ${todayShiftsMy.length} shifts</div>
               </div>
               <div style="text-align:right">
-                <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD</div>
-                <div style="font-size:20px;font-weight:700;margin-top:4px">${formatLiters(totalLitersMy)}</div>
-                <div style="font-size:10px;opacity:0.5;margin-top:2px">Avg ${todayShiftsMy.length? formatLiters(totalLitersMy/todayShiftsMy.length):'0 L'}/shift</div>
+                <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD • TODAY</div>
+                <div style="margin-top:6px;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px 10px;border:1px solid rgba(255,255,255,0.12)">
+                  <div style="display:flex;justify-content:space-between;gap:12px;font-size:11px">
+                    <div><span style="opacity:0.6">MS</span><div style="font-weight:700;font-size:13px;margin-top:2px">${formatLiters(msLitersMy).replace(' L','')}</div></div>
+                    <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
+                    <div><span style="opacity:0.6">HSD</span><div style="font-weight:700;font-size:13px;margin-top:2px">${formatLiters(hsdLitersMy).replace(' L','')}</div></div>
+                  </div>
+                  <div style="font-size:9px;opacity:0.5;margin-top:6px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px">Total ${formatLiters(totalLitersMy)} • Avg ${todayShiftsMy.length? formatLiters(totalLitersMy/todayShiftsMy.length):'0 L'}/shift</div>
+                </div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
@@ -331,9 +358,15 @@ export async function dashboardView({ root }) {
               </div>
             </div>
             <div style="text-align:right">
-              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD</div>
-              <div style="font-size:22px;font-weight:700;margin-top:4px">${formatLiters(totalLitersAll)}</div>
-              <div style="font-size:10px;opacity:0.5;margin-top:2px">${todayShiftsAll.length} shifts • ${approvedToday} approved</div>
+              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD • TODAY</div>
+              <div style="margin-top:6px;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px 10px;border:1px solid rgba(255,255,255,0.12);min-width:140px">
+                <div style="display:flex;justify-content:space-between;gap:12px">
+                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">MS</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(msLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Petrol</div></div>
+                  <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
+                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">HSD</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(hsdLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Diesel</div></div>
+                </div>
+                <div style="font-size:9px;opacity:0.5;margin-top:6px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px">Total ${formatLiters(totalLitersAll)} • ${todayShiftsAll.length} shifts</div>
+              </div>
             </div>
           </div>
 
@@ -456,51 +489,6 @@ export async function dashboardView({ root }) {
           <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">No pending approvals • All clear</div>
         </div>
       `}
-
-      <!-- Top Performers Banking -->
-      ${topPerformers.length>0 ? `
-        <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:13px;font-weight:800">🏆 Top Performers Today • Liters</span>
-            <span style="font-size:10px;background:var(--bg);padding:4px 8px;border-radius:12px">${todayShiftsAll.length} shifts today</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-            ${topPerformers.map((emp, idx)=>`
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${idx===0?'#fff7e6':'#f8f9fa'};border-radius:12px;border:1px solid ${idx===0?'#ffd591':'transparent'}">
-                <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:28px;height:28px;border-radius:50%;background:${idx===0?'#ff5a1f': idx===1?'#8c8c8c': idx===2?'#d48806':'#1a2535'};color:white;display:grid;place-items:center;font-weight:800;font-size:11px">${idx+1}</div>
-                  <div style="width:36px;height:36px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:12px">${(emp.name||'?')[0]}</div>
-                  <div><div style="font-weight:700;font-size:13px;display:flex;align-items:center;gap:4px">${emp.name} ${idx===0?'👑':''}</div><div style="font-size:11px;color:var(--text-secondary)">${emp.shifts} shifts • ${formatCurrency(emp.net)} net</div></div>
-                </div>
-                <div style="text-align:right"><div style="font-weight:800;font-size:13px">${formatLiters(emp.liters)}</div><div style="font-size:10px;color:var(--text-secondary)">Avg ${formatLiters(emp.liters/emp.shifts)}/shift</div></div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      ` : ''}
-
-      <!-- Today's Shifts Banking -->
-      <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:13px;font-weight:800">🧾 Today's Shifts • ${todayShiftsAll.length}</span>
-          <button style="font-size:11px;background:var(--bg);border:1px solid var(--border);padding:4px 10px;border-radius:20px;font-weight:600" onclick="location.hash='#/shifts'">View all →</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-          ${todayShiftsAll.slice(0,5).map(s=>{
-            const gross = s.totals?.totalRevenue||0;
-            const exp = expenseMap[s.id]||0;
-            const net = gross - exp;
-            const statusColor = s.status==='APPROVED' ? '#52c41a' : s.status==='PENDING_REVIEW' ? '#faad14' : s.status==='REJECTED' ? '#ff4d4f' : '#1677ff';
-            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#f8f9fa;border-radius:12px;border-left:3px solid ${statusColor};cursor:pointer" onclick="location.hash='#/shifts/${s.id}'">
-              <div style="display:flex;align-items:center;gap:10px">
-                <div style="width:32px;height:32px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:11px">${(s.employeeName||'?')[0]}</div>
-                <div><div style="font-weight:600;font-size:13px">${s.employeeName} • ${formatCurrency(net)}</div><div style="font-size:11px;color:var(--text-secondary)">${formatLiters(s.totals?.totalLiters||0)} • ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} • ${s.status}</div></div>
-              </div>
-              <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};display:inline-block"></span>
-            </div>`;
-          }).join('') || `<p style="font-size:12px;color:var(--text-secondary);text-align:center;padding:12px">No shifts today • Start a shift to see activity</p>`}
-        </div>
-      </div>
 
       <!-- Quick Actions Banking -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px">
