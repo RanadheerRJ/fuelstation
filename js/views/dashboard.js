@@ -63,20 +63,41 @@ export async function dashboardView({ root }) {
   const isAdmin = user.role === 'admin';
   const isAttendant = user.role === 'attendant';
 
+  // Fetch transactions to compute expenses (fuel out but not sale) - must minus from gross
+  let expenseMap = {};
+  try {
+    const { queryDocs } = await import('../services/firestoreService.js');
+    const allTx = await queryDocs('transactions', tx=> tx.stationId===activeStation.id && tx.type==='expense');
+    allTx.forEach(tx=>{ if (tx.shiftId) expenseMap[tx.shiftId] = (expenseMap[tx.shiftId]||0)+Number(tx.amount||0); });
+  } catch {}
+
   const todayShiftsAll = allShifts.filter(s=> new Date(s.startTime).toISOString().slice(0,10)===todayStr);
-  let totalSalesAll = 0, totalLitersAll = 0;
+  let totalSalesAll = 0, totalGrossAll = 0, totalExpAll = 0, totalLitersAll = 0;
   todayShiftsAll.forEach(s=>{ 
-    totalSalesAll += s.totals?.totalRevenue||0; 
+    const gross = s.totals?.totalRevenue||0;
+    const exp = expenseMap[s.id]||0;
+    const net = gross - exp;
+    totalGrossAll += gross;
+    totalExpAll += exp;
+    totalSalesAll += net; // net = whole amount to owner
     totalLitersAll += s.totals?.totalLiters||0; 
   });
 
   const todayShiftsMy = myShifts.filter(s=> new Date(s.startTime).toISOString().slice(0,10)===todayStr);
-  let totalSalesMy = 0, totalLitersMy = 0, varianceMy = 0, toHandoverMy = 0;
+  let totalSalesMy = 0, totalGrossMy = 0, totalExpMy = 0, totalLitersMy = 0, varianceMy = 0, toHandoverMy = 0;
   todayShiftsMy.forEach(s=>{ 
-    totalSalesMy += s.totals?.totalRevenue||0; 
+    const gross = s.totals?.totalRevenue||0;
+    const exp = expenseMap[s.id]||0;
+    const net = gross - exp;
+    totalGrossMy += gross;
+    totalExpMy += exp;
+    totalSalesMy += net;
     totalLitersMy += s.totals?.totalLiters||0; 
-    varianceMy += s.totals?.variance||0;
-    if ((s.totals?.variance||0) < -0.5) toHandoverMy += Math.abs(s.totals.variance);
+    // variance based on net: payments - net
+    const payments = s.totals?.totalPayments||0;
+    const netVar = payments - net;
+    varianceMy += netVar;
+    if (netVar < -0.5) toHandoverMy += Math.abs(netVar);
   });
 
   const activeShifts = allShifts.filter(s=>s.status==='ACTIVE');

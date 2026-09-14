@@ -72,18 +72,33 @@ export async function closeShift(shiftId, { closingReadings, payments }) {
 
   const totalsCalc = calcShiftTotals(updatedNozzles);
   const totalPayments = calcPaymentsTotal(payments);
-  const { variance, status: varianceStatus } = calcVariance(totalsCalc.totalRevenue, totalPayments);
+
+  // Expenses must be removed from gross because fuel came out of nozzle (testing etc) - whole amount to owner is net
+  let totalExpenses = 0;
+  try {
+    const txs = await queryDocs('transactions', t => t.stationId === shift.stationId && t.shiftId === shift.id && t.type === 'expense');
+    totalExpenses = txs.reduce((a,b)=>a+Number(b.amount||0),0);
+  } catch { totalExpenses = 0; }
+
+  const grossRevenue = totalsCalc.totalRevenue;
+  const netRevenue = Math.round((grossRevenue - totalExpenses)*100)/100; // Net = Gross - Expenses = whole amount to owner
+  const { variance, status: varianceStatus } = calcVariance(netRevenue, totalPayments);
 
   const patch = {
     nozzles: updatedNozzles,
     totals: {
       totalLiters: totalsCalc.totalLiters,
-      totalRevenue: totalsCalc.totalRevenue,
+      totalRevenue: grossRevenue, // keep gross for history
+      totalGross: grossRevenue,
+      totalExpenses,
+      totalNet: netRevenue,
+      netRevenue,
       byFuel: totalsCalc.byFuel,
       payments,
       totalPayments,
       variance,
       varianceStatus,
+      // For reports: net is whole amount to owner
     },
     endTime: new Date().toISOString(),
     status: 'PENDING_REVIEW',
