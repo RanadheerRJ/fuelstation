@@ -7,6 +7,7 @@ import { getTransactions, addCredit, addExpense } from '../services/transactions
 import { addNote, getNotes } from '../services/notes.js';
 import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue } from '../services/calc.js';
 import { collectFromShift, getHideBalancePref } from '../services/collections.js';
+import { computeShiftFinancials, getExpensesByShift } from '../services/settlement.js';
 
 export async function shiftsListView({ root }) {
   const { user, currentStationId } = getState();
@@ -14,6 +15,7 @@ export async function shiftsListView({ root }) {
   const stationId = currentStationId || stations[0]?.id;
   if (!stationId) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
   const shifts = await getShifts(stationId, user.role==='attendant'? { userId: user.uid }: {});
+  const expenseByShift = await getExpensesByShift(stationId);
   root.innerHTML = `
     <div class="container">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -31,7 +33,8 @@ export async function shiftsListView({ root }) {
     const isOwner = user.role === 'owner';
     if (!list.length) return `<div class="neu-card empty" style="padding:24px;text-align:center"><p>No shifts</p></div>`;
     return list.map(sh=>{
-      const v = sh.totals?.variance||0;
+      const shFin = computeShiftFinancials(sh, expenseByShift[sh.id]||0);
+      const v = shFin.variance;
       const absV = Math.abs(v);
       let varText = '';
       if (absV>0.5) {
@@ -170,8 +173,9 @@ export async function shiftDetailView({ root, params }) {
     const t = shift.totals || {};
     const totalCredits = credits.reduce((a,c)=>a+Number(c.amount||0),0);
     const totalExpenses = expenses.reduce((a,c)=>a+Number(c.amount||0),0);
-    const isShort = (t.variance||0) < -0.5;
-    const isExcess = (t.variance||0) > 0.5;
+    const fin = computeShiftFinancials(shift, totalExpenses);
+    const isShort = fin.toCollect > 0.5;
+    const isExcess = fin.toReturn > 0.5;
     const isRejected = shift.status === 'REJECTED';
     const isPending = shift.status === 'PENDING_REVIEW';
 
@@ -281,14 +285,13 @@ export async function shiftDetailView({ root, params }) {
             </div>
             ${(() => {
               if (shift.status !== 'APPROVED') return '';
-              const v = t.variance||0;
-              const absV = Math.abs(v);
+              const absV = fin.toCollect > 0.5 ? fin.toCollect : fin.toReturn;
               if (absV < 0.5) return '';
-              const collected = shift.settlement?.collectedAmount||0;
-              const returned = shift.settlement?.returnedAmount||0;
-              const isShort = v < -0.5;
-              const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
-              const isSettled = pending <= 0.5;
+              const collected = fin.collected;
+              const returned = fin.returned;
+              const isShort = fin.toCollect > 0.5;
+              const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
+              const isSettled = fin.isSettled;
               const hideBal = getHideBalancePref(shift.stationId);
               const fmt = (val) => hideBal ? '••••' : formatCurrency(val);
               if (isSettled) {
@@ -381,12 +384,8 @@ export async function shiftDetailView({ root, params }) {
     }
 
     root.querySelector('#collectThisShift')?.addEventListener('click', async ()=>{
-      const v = t.variance||0;
-      const absV = Math.abs(v);
-      const isShort = v < -0.5;
-      const collected = shift.settlement?.collectedAmount||0;
-      const returned = shift.settlement?.returnedAmount||0;
-      const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
+      const isShort = fin.toCollect > 0.5;
+      const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
       const amountStr = prompt(`${isShort?'Collect from':'Return to'} ${shift.employeeName}: Enter amount (pending ${formatCurrency(pending)}):`, pending.toFixed(2));
       if (!amountStr) return;
       const amount = Number(amountStr);
@@ -400,12 +399,8 @@ export async function shiftDetailView({ root, params }) {
       } catch(e){ alert(e.message); }
     });
     root.querySelector('#collectFull')?.addEventListener('click', async ()=>{
-      const v = t.variance||0;
-      const absV = Math.abs(v);
-      const isShort = v < -0.5;
-      const collected = shift.settlement?.collectedAmount||0;
-      const returned = shift.settlement?.returnedAmount||0;
-      const pending = isShort ? Math.max(0, absV - collected) : Math.max(0, absV - returned);
+      const isShort = fin.toCollect > 0.5;
+      const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
       if (!confirm(`Collect full ${formatCurrency(pending)} ${isShort?'from':'to'} ${shift.employeeName}?`)) return;
       try {
         await collectFromShift(shift.id, pending, `Full settlement for shift`, isShort?'collect':'return');
@@ -694,7 +689,7 @@ function generateShiftCSV(shift, credits, expenses) {
   let csv = `Shift ID,${shift.id}\nEmployee,${shift.employeeName}\nStart,${shift.startTime}\nEnd,${shift.endTime||''}\nStatus,${shift.status}\n\n`;
   csv += `Nozzle ID,Fuel Type,Opening,Closing,Liters,Price,Revenue\n`;
   (shift.nozzles||[]).forEach(n=>{ csv += `${n.nozzleId},${n.fuelType},${n.openingReading},${n.closingReading||''},${n.litersSold||''},${n.price||''},${n.revenue||''}\n`; });
-  csv += `\nTotal Revenue,${shift.totals?.totalRevenue||0}\nTotal Payments,${shift.totals?.totalPayments||0}\nVariance,${shift.totals?.variance||0}\n\n`;
+  csv += `\nTotal Revenue,${shift.totals?.totalRevenue||0}\nTotal Payments,${shift.totals?.totalPayments||0}\nVariance,${shift.totals?.variance||0}\nExpenses,${expenses.reduce((a,e)=>a+Number(e.amount||0),0)}\n\n`;
   if (shift.correctionRequests?.length) { csv += `Correction Requests\nType,Field,Message,Requested By\n`; shift.correctionRequests.forEach(cr=>{ csv += `${cr.type},${cr.field},${cr.message},${cr.requestedByName||''}\n`; }); }
   return csv;
 }

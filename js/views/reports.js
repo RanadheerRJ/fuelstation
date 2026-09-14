@@ -1,294 +1,340 @@
 import { getState } from '../state.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
-import { getReportForRange } from '../services/reports.js';
-import { getShifts } from '../services/shifts.js';
-import { getTransactions } from '../services/transactions.js';
-import { formatCurrency, formatLiters, formatDate } from '../services/calc.js';
+import { getReportForRange, toDateKey } from '../services/reports.js';
+import { formatLiters } from '../services/calc.js';
 import { getEmployees } from '../services/users.js';
-import { getHideBalancePref } from '../services/collections.js';
+import { getPumps } from '../services/pumps.js';
 
+// ---------------------------------------------------------------- helpers
+const todayKey = () => toDateKey(new Date());
+const shiftDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return toDateKey(d); };
+const firstOfMonth = () => { const d = new Date(); return toDateKey(new Date(d.getFullYear(), d.getMonth(), 1)); };
+
+const PRESETS = () => [
+  { label: 'Today', from: todayKey(), to: todayKey() },
+  { label: 'Yesterday', from: shiftDays(-1), to: shiftDays(-1) },
+  { label: 'Last 7 Days', from: shiftDays(-6), to: todayKey() },
+  { label: 'This Month', from: firstOfMonth(), to: todayKey() },
+  { label: 'Last 30 Days', from: shiftDays(-29), to: todayKey() },
+];
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const buildHash = (f) => `#/reports?${new URLSearchParams(f).toString()}`;
+
+const dayLabel = (key) => {
+  if (key === todayKey()) return 'Today';
+  if (key === shiftDays(-1)) return 'Yesterday';
+  const d = new Date(key + 'T12:00:00');
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+};
+
+const timeOf = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const initials = (name) => String(name || '?').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+const chip = (text, tone = 'neutral') => {
+  const tones = {
+    neutral: 'background:var(--bg);color:var(--text-secondary)',
+    pump: 'background:#e6f4ff;color:#0958d9',
+    fuel: 'background:#f6ffed;color:#389e0d',
+  };
+  return `<span style="display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap;${tones[tone]}">${esc(text)}</span>`;
+};
+
+const statusBadge = (status) => {
+  const map = { APPROVED: 'badge--success', PENDING_REVIEW: 'badge--warning', REJECTED: 'badge--danger', ACTIVE: 'badge--info' };
+  return `<span class="badge ${map[status] || 'badge--neutral'}" style="font-size:10px;padding:3px 8px;border-radius:12px">${status === 'PENDING_REVIEW' ? 'PENDING' : status}</span>`;
+};
+
+// ---------------------------------------------------------------- view
 export async function reportsView({ root, query }) {
   const { user, currentStationId } = getState();
   const stations = await getStationsForCurrentUser();
   const stationId = currentStationId || stations[0]?.id;
-  if (!stationId) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
+  if (!stationId) { root.innerHTML = `<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
 
-  const isOwner = user.role === 'owner';
-  const isManager = user.role === 'manager';
-  const isAdmin = user.role === 'admin';
   const isAttendant = user.role === 'attendant';
+  const station = stations.find(s => s.id === stationId);
 
-  // Parse filters from query or defaults
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0,10);
-  const last7 = new Date(today); last7.setDate(today.getDate()-6);
-  const last7Str = last7.toISOString().slice(0,10);
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+  const f = {
+    from: query.from || shiftDays(-6),
+    to: query.to || todayKey(),
+    emp: isAttendant ? user.uid : (query.emp || 'all'),
+    pump: query.pump || 'ALL',
+    fuel: query.fuel || 'ALL',
+  };
 
-  let fromDate = query.from || last7Str;
-  let toDate = query.to || todayStr;
-  let employeeFilter = query.emp || 'all';
-  let statusFilter = query.status || 'ALL';
+  const report = await getReportForRange(stationId, f.from, f.to, {
+    employeeId: f.emp,
+    pumpId: f.pump,
+    fuelType: f.fuel,
+  });
 
-  // For attendant, force own data
-  if (isAttendant) employeeFilter = user.uid;
+  // Dropdown options from everything in range, so you can always switch back
+  const all = await getReportForRange(stationId, f.from, f.to);
+  const fuelOptions = all.byFuel.map(v => v.fuelType);
 
-  const allShiftsRaw = await getShifts(stationId);
-  const myShiftsRaw = allShiftsRaw.filter(s=>s.userId===user.uid);
-  const shiftsBase = isAttendant ? myShiftsRaw : allShiftsRaw;
-
-  // Get employees for filter dropdown (owner/manager)
-  let employeesList = [];
+  let pumpOptions = [];
   try {
-    employeesList = await getEmployees(stationId);
-    if (employeesList.length===0) {
-      // fallback from shifts
-      const uniq = {};
-      allShiftsRaw.forEach(s=>{ uniq[s.userId]=s.employeeName; });
-      employeesList = Object.entries(uniq).map(([uid, name])=>({ uid, id: uid, name }));
-    }
-  } catch { employeesList = []; }
+    pumpOptions = (await getPumps(stationId)).map(p => ({ id: p.id, name: p.name || `Pump ${p.number}` }));
+  } catch { pumpOptions = []; }
+  if (!pumpOptions.length) pumpOptions = all.byPump.map(p => ({ id: p.pumpId, name: p.pumpName }));
 
-  const report = await getReportForRange(stationId, fromDate, toDate, {
-    employeeId: employeeFilter,
-    status: statusFilter,
-  });
-
-  const credits = await getTransactions(stationId, { type: 'credit' });
-  const filteredCredits = credits.filter(c=>{
-    const d = new Date(c.createdAt).toISOString().slice(0,10);
-    return d >= fromDate && d <= toDate && (employeeFilter==='all' || myShiftsRaw.some(s=>s.id===c.shiftId) || true);
-  });
-
-  const hideBalance = getHideBalancePref(stationId);
-  const fmt = (v) => hideBalance ? '••••' : formatCurrency(v);
-  const fmtLit = (v) => hideBalance ? '••••' : formatLiters(v);
-
-  if (isAttendant) {
-    root.innerHTML = `
-      <div class="container" style="max-width:520px;margin:0 auto;padding-bottom:100px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div><h1 class="page-title" style="font-size:20px">My Reports</h1><p class="page-sub" style="margin-top:4px">${stations.find(s=>s.id===stationId)?.name} • My Performance • Filtered</p></div>
-          <button class="neu-btn" style="min-height:40px;padding:0 14px;border-radius:10px;font-weight:600" id="exportBtn">⬇️ CSV</button>
-        </div>
-
-        <!-- Filters -->
-        <div class="neu-card" style="margin-top:16px;padding:14px;border-radius:14px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary)">Filters • Date Range</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-            <div><label class="label" style="font-size:11px">From</label><input type="date" id="fromDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${fromDate}"></div>
-            <div><label class="label" style="font-size:11px">To</label><input type="date" id="toDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${toDate}"></div>
-          </div>
-          <div style="display:flex;gap:8px;overflow:auto;margin-top:12px;padding-bottom:4px">
-            ${[
-              {label:'Today', from: todayStr, to: todayStr},
-              {label:'Yesterday', from: new Date(new Date().setDate(new Date().getDate()-1)).toISOString().slice(0,10), to: new Date(new Date().setDate(new Date().getDate()-1)).toISOString().slice(0,10)},
-              {label:'Last 7 Days', from: last7Str, to: todayStr},
-              {label:'This Month', from: firstOfMonth, to: todayStr},
-              {label:'Last 30 Days', from: new Date(new Date().setDate(new Date().getDate()-29)).toISOString().slice(0,10), to: todayStr},
-            ].map(p=>`<button class="preset-btn neu-btn" data-from="${p.from}" data-to="${p.to}" style="min-height:36px;padding:0 14px;border-radius:20px;font-size:12px;white-space:nowrap;${fromDate===p.from && toDate===p.to ? 'background:#232f3e;color:white;border-color:#232f3e' : ''}">${p.label}</button>`).join('')}
-          </div>
-          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div><label class="label" style="font-size:11px">Status</label><select id="statusFilter" class="neu-select" style="min-height:44px;border-radius:10px"><option value="ALL" ${statusFilter==='ALL'?'selected':''}>All Status</option><option value="APPROVED" ${statusFilter==='APPROVED'?'selected':''}>Approved</option><option value="PENDING_REVIEW" ${statusFilter==='PENDING_REVIEW'?'selected':''}>Pending</option><option value="REJECTED" ${statusFilter==='REJECTED'?'selected':''}>Rejected</option><option value="ACTIVE" ${statusFilter==='ACTIVE'?'selected':''}>Active</option></select></div>
-            <div style="display:flex;align-items:flex-end"><button id="applyFilter" class="neu-btn neu-btn--primary" style="min-height:44px;border-radius:10px;width:100%;font-weight:700">Apply Filter</button></div>
-          </div>
-        </div>
-
-        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px;background:linear-gradient(135deg,#f6ffed 0%,#ffffff 100%);border:1px solid #b7eb8f">
-          <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700;font-size:14px">My Performance • ${fromDate} → ${toDate}</h3><span style="font-size:11px;background:white;padding:4px 10px;border-radius:20px;border:0.5px solid #b7eb8f">${report.count} shifts</span></div>
-          <div class="grid grid-2" style="margin-top:14px;gap:12px">
-            <div style="padding:12px;background:white;border-radius:10px;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">My Sales</div><div style="font-weight:800;font-size:18px;margin-top:4px">${fmt(report.totalRevenue)}</div><div style="font-size:10px;color:var(--text-tertiary)">${report.count} shift(s) filtered</div></div>
-            <div style="padding:12px;background:white;border-radius:10px;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">My Fuel Sold</div><div style="font-weight:800;font-size:18px;margin-top:4px">${fmtLit(report.totalLiters)}</div><div style="font-size:10px;color:var(--text-tertiary)">In range</div></div>
-          </div>
-          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div style="padding:10px;background:white;border-radius:10px;text-align:center"><div style="font-size:10px;color:var(--text-secondary)">To Handover</div><div style="font-weight:700;font-size:14px;color:#cf1322;margin-top:2px">${fmt(report.toCollect)}</div></div>
-            <div style="padding:10px;background:white;border-radius:10px;text-align:center"><div style="font-size:10px;color:var(--text-secondary)">Excess</div><div style="font-weight:700;font-size:14px;color:#389e0d;margin-top:2px">${fmt(report.toReturn)}</div></div>
-          </div>
-          <div style="margin-top:12px"><div style="font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">By Fuel</div><div style="display:flex;flex-direction:column;gap:6px">${Object.entries(report.byFuel).map(([ft,v])=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 10px;background:white;border-radius:8px"><span>${ft}</span><span style="font-weight:600">${fmtLit(v.liters)} • ${fmt(v.revenue)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No data</p>`}</div></div>
-        </div>
-
-        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
-          <h3 style="font-weight:700;font-size:14px">My Shifts • ${report.shifts.length} filtered</h3>
-          <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:500px;overflow:auto">
-            ${report.shifts.slice(0,50).map(s=>`
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer" onclick="location.hash='#/shifts/${s.id}'">
-                <div><div style="font-weight:600;font-size:13px">${new Date(s.startTime).toLocaleDateString()} ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} • ${fmt(s.totals?.totalRevenue||0)}</div><div style="font-size:11px;color:var(--text-secondary)">${fmtLit(s.totals?.totalLiters||0)} • ${s.status} ${s.totals?.variance<0? '• To Handover '+fmt(Math.abs(s.totals.variance)) : ''}</div></div>
-                <span class="badge ${s.status==='APPROVED'?'badge--success': s.status==='PENDING_REVIEW'?'badge--warning':'badge--danger'}" style="font-size:10px;padding:4px 8px;border-radius:12px">${s.status}</span>
-              </div>
-            `).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No shifts in range</p>`}
-          </div>
-        </div>
-      </div>
-    `;
-    attachFilterHandlers(root, stationId);
-    root.querySelector('#exportBtn').addEventListener('click', ()=> exportCSV(report, `my-report-${fromDate}-${toDate}`));
-    return;
+  let employeeOptions = [];
+  if (!isAttendant) {
+    try {
+      employeeOptions = (await getEmployees(stationId)).map(e => ({ id: e.uid || e.id, name: e.name || e.phone || 'Staff' }));
+    } catch { employeeOptions = []; }
+    if (!employeeOptions.length) employeeOptions = all.byEmployee.map(e => ({ id: e.userId, name: e.employeeName }));
   }
 
-  // Owner/Manager view - full powerful filtering
+  const empName = f.emp === 'all'
+    ? 'All staff'
+    : (employeeOptions.find(e => e.id === f.emp)?.name || report.byEmployee[0]?.employeeName || 'Staff');
+  const pumpName = f.pump === 'ALL' ? 'All pumps' : (pumpOptions.find(p => p.id === f.pump)?.name || 'Pump');
+  const activeCount = [f.emp !== 'all', f.pump !== 'ALL', f.fuel !== 'ALL'].filter(Boolean).length;
+
+  // ------------------------------------------------------------ filters
+  const filtersHtml = `
+    <div class="neu-card" style="margin-top:14px;padding:14px;border-radius:14px">
+      <div style="display:flex;gap:8px;overflow:auto;padding-bottom:4px">
+        ${PRESETS().map(p => {
+          const on = f.from === p.from && f.to === p.to;
+          return `<button class="preset-btn neu-btn" data-from="${p.from}" data-to="${p.to}" style="min-height:34px;padding:0 14px;border-radius:20px;font-size:12px;white-space:nowrap;${on ? 'background:#232f3e;color:white;border-color:#232f3e' : ''}">${p.label}</button>`;
+        }).join('')}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+        <div><label class="label" style="font-size:11px">From</label><input type="date" id="fromDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${f.from}" max="${todayKey()}"></div>
+        <div><label class="label" style="font-size:11px">To</label><input type="date" id="toDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${f.to}" max="${todayKey()}"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:${isAttendant ? '1fr 1fr' : '1fr 1fr 1fr'};gap:10px;margin-top:10px">
+        ${isAttendant ? '' : `
+        <div><label class="label" style="font-size:11px">Employee</label>
+          <select id="empFilter" class="neu-select" style="min-height:44px;border-radius:10px">
+            <option value="all">All staff</option>
+            ${employeeOptions.map(e => `<option value="${esc(e.id)}" ${f.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+          </select>
+        </div>`}
+        <div><label class="label" style="font-size:11px">Pump</label>
+          <select id="pumpFilter" class="neu-select" style="min-height:44px;border-radius:10px">
+            <option value="ALL">All pumps</option>
+            ${pumpOptions.map(p => `<option value="${esc(p.id)}" ${f.pump === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div><label class="label" style="font-size:11px">Fuel</label>
+          <select id="fuelFilter" class="neu-select" style="min-height:44px;border-radius:10px">
+            <option value="ALL">All fuels</option>
+            ${fuelOptions.map(ft => `<option value="${esc(ft)}" ${f.fuel === ft ? 'selected' : ''}>${esc(ft)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:${activeCount ? '2fr 1fr' : '1fr'};gap:10px;margin-top:12px">
+        <button id="applyFilter" class="neu-btn neu-btn--primary" style="min-height:46px;border-radius:12px;font-weight:700">Apply</button>
+        ${activeCount ? `<button id="resetFilter" class="neu-btn" style="min-height:46px;border-radius:12px;font-weight:600">Clear ${activeCount}</button>` : ''}
+      </div>
+
+      <div style="margin-top:10px;font-size:11px;color:var(--text-secondary)">
+        ${f.from === f.to ? dayLabel(f.from) : `${f.from} → ${f.to}`} • ${esc(empName)} • ${esc(pumpName)}${f.fuel !== 'ALL' ? ' • ' + esc(f.fuel) : ''}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ totals
+  const totalsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px">
+      <div class="neu-card" style="padding:12px;border-radius:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.4px">Fuel Sold</div>
+        <div style="font-weight:800;font-size:17px;margin-top:4px">${formatLiters(report.totalLiters)}</div>
+      </div>
+      <div class="neu-card" style="padding:12px;border-radius:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.4px">Shifts</div>
+        <div style="font-weight:800;font-size:17px;margin-top:4px">${report.count}</div>
+      </div>
+      <div class="neu-card" style="padding:12px;border-radius:12px;text-align:center">
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.4px">${isAttendant ? 'Days' : 'Staff'}</div>
+        <div style="font-weight:800;font-size:17px;margin-top:4px">${isAttendant ? report.byDate.length : report.byEmployee.length}</div>
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ who worked what
+  const staffHtml = isAttendant || !report.byEmployee.length ? '' : `
+    <div class="neu-card" style="margin-top:14px;padding:16px;border-radius:14px">
+      <h3 style="font-weight:700;font-size:14px">Who Worked What</h3>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        ${report.byEmployee.map(e => `
+          <div class="emp-row" data-emp="${esc(e.userId)}" style="padding:12px;background:var(--bg);border-radius:12px;cursor:pointer">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                <div style="width:34px;height:34px;flex:none;border-radius:50%;background:#232f3e;color:white;display:grid;place-items:center;font-weight:700;font-size:12px">${initials(e.employeeName)}</div>
+                <div style="min-width:0">
+                  <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.employeeName)}</div>
+                  <div style="font-size:11px;color:var(--text-secondary)">${e.shifts} shift${e.shifts === 1 ? '' : 's'} • ${e.days} day${e.days === 1 ? '' : 's'}</div>
+                </div>
+              </div>
+              <div style="font-weight:800;font-size:14px;white-space:nowrap">${formatLiters(e.liters)}</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+              ${e.pumps.map(p => chip(p, 'pump')).join('')}
+              ${e.fuels.map(ft => chip(ft, 'fuel')).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ pumps
+  const pumpsHtml = !report.byPump.length ? '' : `
+    <div class="neu-card" style="margin-top:14px;padding:16px;border-radius:14px">
+      <h3 style="font-weight:700;font-size:14px">By Pump</h3>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        ${report.byPump.map(p => `
+          <div class="pump-row" data-pump="${esc(p.pumpId)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer">
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:13px">${esc(p.pumpName)}</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.staff.join(', '))} • ${esc(p.fuels.join(', '))}</div>
+            </div>
+            <div style="font-weight:700;font-size:13px;white-space:nowrap">${formatLiters(p.liters)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ fuels
+  const fuelsHtml = !report.byFuel.length ? '' : `
+    <div class="neu-card" style="margin-top:14px;padding:16px;border-radius:14px">
+      <h3 style="font-weight:700;font-size:14px">By Fuel</h3>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        ${report.byFuel.map(v => `
+          <div class="fuel-row" data-fuel="${esc(v.fuelType)}" style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer">
+            <div style="font-weight:600;font-size:13px">${esc(v.fuelType)}</div>
+            <div style="font-weight:700;font-size:13px">${formatLiters(v.liters)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ day log
+  const byDay = {};
+  report.shifts.forEach(s => { (byDay[s.work.date] ||= []).push(s); });
+  const dayKeys = Object.keys(byDay).sort((a, b) => b.localeCompare(a));
+
+  const logHtml = `
+    <div class="neu-card" style="margin-top:14px;padding:16px;border-radius:14px">
+      <h3 style="font-weight:700;font-size:14px">Work Log</h3>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:16px">
+        ${dayKeys.map(dk => {
+          const list = byDay[dk].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+          const liters = list.reduce((a, s) => a + s.work.liters, 0);
+          return `
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding-bottom:6px;border-bottom:1px solid var(--border)">
+              <span style="font-weight:700;font-size:12px">${dayLabel(dk)}</span>
+              <span style="font-size:11px;color:var(--text-secondary)">${list.length} shift${list.length === 1 ? '' : 's'} • ${formatLiters(liters)}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+              ${list.map(s => `
+                <div style="padding:12px;background:var(--bg);border-radius:10px;cursor:pointer" onclick="location.hash='#/shifts/${s.id}'">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+                    <div style="font-weight:600;font-size:13px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                      ${isAttendant ? '' : esc(s.work.employeeName) + ' • '}${timeOf(s.startTime)}${s.endTime ? ' → ' + timeOf(s.endTime) : ''}
+                    </div>
+                    ${statusBadge(s.status)}
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+                    ${s.work.pumps.map(p => chip(`${p.pumpName} · ${formatLiters(p.liters)}`, 'pump')).join('')}
+                    ${s.work.fuelNames.map(ft => chip(ft, 'fuel')).join('')}
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  // ------------------------------------------------------------ render
+  const empty = `
+    <div class="neu-card" style="margin-top:14px;padding:24px;border-radius:14px;text-align:center">
+      <div style="font-size:28px">📭</div>
+      <p style="font-weight:700;margin-top:8px">Nothing in this range</p>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Try a wider date range${activeCount ? ' or clear the filters' : ''}.</p>
+    </div>`;
+
   root.innerHTML = `
     <div class="container" style="max-width:520px;margin:0 auto;padding-bottom:100px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><h1 class="page-title" style="font-size:20px">${isOwner ? 'Station Reports' : 'Team Reports'}</h1><p class="page-sub" style="margin-top:4px">${stations.find(s=>s.id===stationId)?.name} • ${isOwner ? 'Owner • All Visibility' : 'Manager'} • ${report.count} shifts filtered</p></div>
-        <button class="neu-btn" style="min-height:40px;padding:0 14px;border-radius:10px;font-weight:600" id="exportBtn">⬇️ Export</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div>
+          <h1 class="page-title" style="font-size:20px">${isAttendant ? 'My Work' : 'Reports'}</h1>
+          <p class="page-sub" style="margin-top:4px">${esc(station?.name || '')}</p>
+        </div>
+        <button class="neu-btn" id="exportBtn" style="min-height:40px;padding:0 14px;border-radius:10px;font-weight:600">⬇️ CSV</button>
       </div>
 
-      <!-- Filters - think big -->
-      <div class="neu-card" style="margin-top:16px;padding:14px;border-radius:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary)">🔍 Filters • Employee + Date Range</div><button id="clearFilter" class="neu-btn" style="min-height:28px;padding:0 10px;border-radius:8px;font-size:11px">Clear</button></div>
-        
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-          <div><label class="label" style="font-size:11px">From Date</label><input type="date" id="fromDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${fromDate}"></div>
-          <div><label class="label" style="font-size:11px">To Date</label><input type="date" id="toDate" class="neu-input" style="min-height:44px;border-radius:10px" value="${toDate}"></div>
-        </div>
+      ${filtersHtml}
+      ${report.count === 0 ? empty : `${totalsHtml}${staffHtml}${pumpsHtml}${fuelsHtml}${logHtml}`}
+    </div>`;
 
-        <div style="display:flex;gap:8px;overflow:auto;margin-top:12px;padding-bottom:4px">
-          ${[
-            {label:'Today', from: todayStr, to: todayStr},
-            {label:'Yesterday', from: new Date(new Date().setDate(new Date().getDate()-1)).toISOString().slice(0,10), to: new Date(new Date().setDate(new Date().getDate()-1)).toISOString().slice(0,10)},
-            {label:'Last 7 Days', from: last7Str, to: todayStr},
-            {label:'This Month', from: firstOfMonth, to: todayStr},
-            {label:'Last 30 Days', from: new Date(new Date().setDate(new Date().getDate()-29)).toISOString().slice(0,10), to: todayStr},
-          ].map(p=>`<button class="preset-btn neu-btn" data-from="${p.from}" data-to="${p.to}" style="min-height:36px;padding:0 14px;border-radius:20px;font-size:12px;white-space:nowrap;${fromDate===p.from && toDate===p.to ? 'background:#232f3e;color:white;border-color:#232f3e' : ''}">${p.label}</button>`).join('')}
-        </div>
+  // ------------------------------------------------------------ handlers
+  const go = (patch) => { location.hash = buildHash({ ...f, ...patch }); };
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-          <div><label class="label" style="font-size:11px">Employee</label><select id="empFilter" class="neu-select" style="min-height:44px;border-radius:10px"><option value="all" ${employeeFilter==='all'?'selected':''}>All Employees (${employeesList.length})</option>${employeesList.map(emp=>`<option value="${emp.uid||emp.id}" ${employeeFilter===(emp.uid||emp.id)?'selected':''}>${emp.name||emp.phone} • ${emp.role||''}</option>`).join('')}</select></div>
-          <div><label class="label" style="font-size:11px">Status</label><select id="statusFilter" class="neu-select" style="min-height:44px;border-radius:10px"><option value="ALL" ${statusFilter==='ALL'?'selected':''}>All Status</option><option value="APPROVED" ${statusFilter==='APPROVED'?'selected':''}>Approved</option><option value="PENDING_REVIEW" ${statusFilter==='PENDING_REVIEW'?'selected':''}>Pending Review</option><option value="REJECTED" ${statusFilter==='REJECTED'?'selected':''}>Rejected</option><option value="ACTIVE" ${statusFilter==='ACTIVE'?'selected':''}>Active</option></select></div>
-        </div>
+  root.querySelectorAll('.preset-btn').forEach(b =>
+    b.addEventListener('click', () => go({ from: b.dataset.from, to: b.dataset.to })));
 
-        <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <button id="applyFilter" class="neu-btn neu-btn--primary" style="min-height:48px;border-radius:12px;font-weight:700">Apply Filters</button>
-          <button id="resetFilter" class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600">Reset to 7 Days</button>
-        </div>
-
-        <div style="margin-top:10px;padding:10px;background:#e6f4ff;border-radius:10px;border:1px solid #91caff">
-          <div style="font-size:11px;font-weight:700;color:#0958d9">Active Filters</div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">📅 ${fromDate} → ${toDate} • 👤 ${employeeFilter==='all'?'All Employees': employeesList.find(e=>(e.uid||e.id)===employeeFilter)?.name || employeeFilter} • 📊 ${statusFilter} • ${report.count} shifts</div>
-        </div>
-      </div>
-
-      <!-- Summary -->
-      <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700;font-size:14px">Summary • ${fromDate} → ${toDate}</h3><span style="font-size:11px;background:var(--bg);padding:4px 10px;border-radius:20px">${report.count} shifts</span></div>
-        
-        <div class="grid grid-2" style="margin-top:14px;gap:12px">
-          <div style="padding:14px;background:linear-gradient(135deg,#e6f4ff 0%,#ffffff 100%);border-radius:12px;border:1px solid #91caff;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">Total Revenue</div><div style="font-weight:800;font-size:20px;margin-top:4px">${fmt(report.totalRevenue)}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${report.count} shifts • Avg ${report.count? fmt(report.totalRevenue/report.count) : fmt(0)}/shift</div></div>
-          <div style="padding:14px;background:var(--bg);border-radius:12px;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">Fuel Sold</div><div style="font-weight:800;font-size:20px;margin-top:4px">${fmtLit(report.totalLiters)}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${Object.keys(report.byFuel).length} fuel types</div></div>
-          <div style="padding:12px;background:#fff1f0;border-radius:12px;text-align:center;border:1px solid #ffa39e"><div style="font-size:11px;color:var(--text-secondary)">To Collect</div><div style="font-weight:800;font-size:16px;margin-top:4px;color:#cf1322">${fmt(report.toCollect)}</div><div style="font-size:10px;color:var(--text-tertiary)">Pending ${fmt(report.pendingCollect)} • Collected ${fmt(report.collected)}</div></div>
-          <div style="padding:12px;background:#f6ffed;border-radius:12px;text-align:center;border:1px solid #b7eb8f"><div style="font-size:11px;color:var(--text-secondary)">To Return</div><div style="font-weight:800;font-size:16px;margin-top:4px;color:#389e0d">${fmt(report.toReturn)}</div><div style="font-size:10px;color:var(--text-tertiary)">Pending ${fmt(report.pendingReturn)} • Returned ${fmt(report.returned)}</div></div>
-        </div>
-
-        <div style="margin-top:14px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:8px">By Fuel • ${Object.keys(report.byFuel).length} types</div>
-          <div style="display:flex;flex-direction:column;gap:6px">${Object.entries(report.byFuel).map(([ft, v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 12px;background:var(--bg);border-radius:10px"><span style="font-weight:600">${ft} • ${v.shifts} shifts</span><span style="font-weight:600">${fmtLit(v.liters)} • ${fmt(v.revenue)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No data</p>`}</div>
-        </div>
-
-        <div style="margin-top:14px;background:#f8f9fa;border-radius:10px;padding:12px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:8px">By Payment Mode</div>
-          ${Object.entries(report.paymentsAgg).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="text-transform:uppercase;color:var(--text-secondary)">${k}</span><span style="font-weight:600">${fmt(v)}</span></div>`).join('')}
-        </div>
-
-        ${Object.keys(report.byDate).length>1 ? `
-          <div style="margin-top:14px">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:8px">Daily Trend • ${Object.keys(report.byDate).length} days</div>
-            <div style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:auto">${Object.values(report.byDate).sort((a,b)=>b.date.localeCompare(a.date)).map(d=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 10px;background:var(--bg);border-radius:8px"><span>${d.date} • ${d.shifts} shifts</span><span style="font-weight:600">${fmt(d.revenue)} • ${fmtLit(d.liters)}</span></div>`).join('')}</div>
-          </div>
-        ` : ''}
-      </div>
-
-      <!-- By Employee -->
-      <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700;font-size:14px">By Employee • ${Object.keys(report.byEmployee).length} staff</h3><button class="neu-btn" style="min-height:32px;padding:0 12px;border-radius:10px;font-size:11px" onclick="document.getElementById('empTable').style.display=document.getElementById('empTable').style.display==='none'?'block':'none'">Toggle</button></div>
-        <div id="empTable" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-          ${Object.values(report.byEmployee).sort((a,b)=>b.revenue-a.revenue).map(emp=>`
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer" onclick="location.hash='#/reports?from=${fromDate}&to=${toDate}&emp=${emp.userId}&status=${statusFilter}'">
-              <div style="display:flex;align-items:center;gap:10px"><div style="width:36px;height:36px;border-radius:50%;background:#232f3e;color:white;display:grid;place-items:center;font-weight:700;font-size:12px">${emp.employeeName.split(' ').map(n=>n[0]).join('').slice(0,2)}</div><div><div style="font-weight:600;font-size:13px">${emp.employeeName}</div><div style="font-size:11px;color:var(--text-secondary)">${emp.shifts} shifts • To Collect ${fmt(emp.toCollect)}</div></div></div>
-              <div style="text-align:right"><div style="font-weight:700;font-size:13px">${fmt(emp.revenue)}</div><div style="font-size:11px;color:var(--text-secondary)">${fmtLit(emp.liters)}</div></div>
-            </div>
-          `).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No employees</p>`}
-        </div>
-      </div>
-
-      <!-- Shifts List Filtered -->
-      <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700;font-size:14px">Shifts • ${report.shifts.length} filtered</h3><div style="display:flex;gap:8px"><button id="loadMore" class="neu-btn" style="min-height:32px;padding:0 12px;border-radius:10px;font-size:11px">Load 50 more</button></div></div>
-        <div id="shiftsList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:600px;overflow:auto">
-          ${renderShifts(report.shifts.slice(0,30), hideBalance)}
-        </div>
-      </div>
-
-      ${isOwner ? `
-        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
-          <h3 style="font-weight:700;font-size:14px">💰 Collections in Range • ${fmt(report.settlements.reduce((a,s)=>a+Number(s.amount||0),0))} • ${report.settlements.length} records</h3>
-          <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto">${report.settlements.slice(0,20).map(s=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 10px;background:var(--bg);border-radius:8px"><span>${s.staffName} • ${s.type}</span><span style="font-weight:600">${fmt(s.amount)} • ${new Date(s.createdAt).toLocaleDateString()}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No collections in range</p>`}</div>
-          <button class="neu-btn" style="margin-top:10px;min-height:40px;border-radius:10px;width:100%;font-weight:600" onclick="location.hash='#/collections'">Go to Collections</button>
-        </div>
-      ` : ''}
-    </div>
-  `;
-
-  attachFilterHandlers(root, stationId);
-  let visible = 30;
-  root.querySelector('#loadMore')?.addEventListener('click', ()=>{
-    visible += 50;
-    root.querySelector('#shiftsList').innerHTML = renderShifts(report.shifts.slice(0, visible), hideBalance);
-  });
-  root.querySelector('#exportBtn').addEventListener('click', ()=> exportCSV(report, `report-${fromDate}-${toDate}-${employeeFilter}`));
-}
-
-function attachFilterHandlers(root, stationId) {
-  root.querySelectorAll('.preset-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      root.querySelector('#fromDate').value = btn.dataset.from;
-      root.querySelector('#toDate').value = btn.dataset.to;
-    });
-  });
-  root.querySelector('#applyFilter')?.addEventListener('click', ()=>{
+  root.querySelector('#applyFilter')?.addEventListener('click', () => {
     const from = root.querySelector('#fromDate').value;
     const to = root.querySelector('#toDate').value;
-    const emp = root.querySelector('#empFilter')?.value || 'all';
-    const status = root.querySelector('#statusFilter')?.value || 'ALL';
-    if (!from || !to) return alert('Select dates');
-    if (new Date(from) > new Date(to)) return alert('From date cannot be after To date');
-    location.hash = `#/reports?from=${from}&to=${to}&emp=${emp}&status=${status}`;
+    if (!from || !to) return alert('Pick both dates');
+    if (from > to) return alert('From date cannot be after To date');
+    go({
+      from, to,
+      emp: root.querySelector('#empFilter')?.value || f.emp,
+      pump: root.querySelector('#pumpFilter').value,
+      fuel: root.querySelector('#fuelFilter').value,
+    });
   });
-  root.querySelector('#clearFilter')?.addEventListener('click', ()=>{
-    const today = new Date().toISOString().slice(0,10);
-    const last7 = new Date(); last7.setDate(last7.getDate()-6);
-    location.hash = `#/reports?from=${last7.toISOString().slice(0,10)}&to=${today}&emp=all&status=ALL`;
-  });
-  root.querySelector('#resetFilter')?.addEventListener('click', ()=>{
-    const today = new Date().toISOString().slice(0,10);
-    const last7 = new Date(); last7.setDate(last7.getDate()-6);
-    location.hash = `#/reports?from=${last7.toISOString().slice(0,10)}&to=${today}&emp=all&status=ALL`;
-  });
+
+  root.querySelector('#resetFilter')?.addEventListener('click', () => go({ emp: 'all', pump: 'ALL', fuel: 'ALL' }));
+  root.querySelectorAll('.emp-row').forEach(el => el.addEventListener('click', () => go({ emp: el.dataset.emp })));
+  root.querySelectorAll('.pump-row').forEach(el => el.addEventListener('click', () => go({ pump: el.dataset.pump })));
+  root.querySelectorAll('.fuel-row').forEach(el => el.addEventListener('click', () => go({ fuel: el.dataset.fuel })));
+
+  root.querySelector('#exportBtn').addEventListener('click', () => exportCSV(report, f));
 }
 
-function renderShifts(shifts, hideBalance) {
-  const fmt = (v) => hideBalance ? '••••' : formatCurrency(v);
-  const fmtLit = (v) => hideBalance ? '••••' : formatLiters(v);
-  if (!shifts.length) return `<p style="font-size:12px;color:var(--text-secondary)">No shifts</p>`;
-  return shifts.map(s=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg);border-radius:10px;cursor:pointer" onclick="location.hash='#/shifts/${s.id}'">
-      <div><div style="font-weight:600;font-size:13px">${s.employeeName} • ${new Date(s.startTime).toLocaleDateString()} ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div><div style="font-size:11px;color:var(--text-secondary)">${fmtLit(s.totals?.totalLiters||0)} • ${fmt(s.totals?.totalRevenue||0)} • ${s.totals?.variance<0 ? 'To Collect '+fmt(Math.abs(s.totals.variance)) : 'Balanced'} • ${s.status}</div></div>
-      <span class="badge ${s.status==='APPROVED'?'badge--success': s.status==='PENDING_REVIEW'?'badge--warning':'badge--neutral'}" style="font-size:10px;padding:4px 8px;border-radius:12px">${s.status}</span>
-    </div>
-  `).join('');
-}
+function exportCSV(report, f) {
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const L = [];
+  L.push(['Work Report', `${report.fromDate} to ${report.toDate}`].map(q).join(','));
+  L.push(['Filters', `employee=${f.emp}; pump=${f.pump}; fuel=${f.fuel}`].map(q).join(','));
+  L.push('');
+  L.push(['Date', 'Employee', 'Start', 'End', 'Status', 'Pump', 'Fuel', 'Liters'].map(q).join(','));
+  report.shifts.forEach(s => {
+    if (!s.work.pumps.length) {
+      L.push([s.work.date, s.work.employeeName, s.startTime, s.endTime || '', s.status, '', '', 0].map(q).join(','));
+      return;
+    }
+    s.work.pumps.forEach(p => {
+      Object.entries(p.fuels).forEach(([ft, v]) => {
+        L.push([s.work.date, s.work.employeeName, s.startTime, s.endTime || '', s.status, p.pumpName, ft, v.liters].map(q).join(','));
+      });
+    });
+  });
+  L.push('');
+  L.push(['By Employee', 'Shifts', 'Days', 'Pumps', 'Fuels', 'Liters'].map(q).join(','));
+  report.byEmployee.forEach(e => L.push([e.employeeName, e.shifts, e.days, e.pumps.join(' / '), e.fuels.join(' / '), e.liters].map(q).join(',')));
+  L.push('');
+  L.push(['By Pump', 'Staff', 'Fuels', 'Liters'].map(q).join(','));
+  report.byPump.forEach(p => L.push([p.pumpName, p.staff.join(' / '), p.fuels.join(' / '), p.liters].map(q).join(',')));
+  L.push('');
+  L.push(['By Fuel', 'Liters'].map(q).join(','));
+  report.byFuel.forEach(v => L.push([v.fuelType, v.liters].map(q).join(',')));
 
-function exportCSV(report, name) {
-  let csv = `FuelOps Report,${report.fromDate} to ${report.toDate},${report.count} shifts\n`;
-  csv += `Total Revenue,${report.totalRevenue}\nTotal Liters,${report.totalLiters}\nTo Collect,${report.toCollect}\nTo Return,${report.toReturn}\nCollected,${report.collected}\n\n`;
-  csv += `By Fuel\nFuel, Liters, Revenue, Shifts\n`;
-  Object.entries(report.byFuel).forEach(([ft,v])=>{ csv += `${ft},${v.liters},${v.revenue},${v.shifts}\n`; });
-  csv += `\nBy Employee\nEmployee,Shifts,Liters,Revenue,ToCollect,ToReturn\n`;
-  Object.values(report.byEmployee).forEach(emp=>{ csv += `${emp.employeeName},${emp.shifts},${emp.liters},${emp.revenue},${emp.toCollect},${emp.toReturn}\n`; });
-  csv += `\nShifts\nEmployee,Start,End,Status,Liters,Revenue,Variance,Collected\n`;
-  report.shifts.forEach(s=>{ csv += `${s.employeeName},${s.startTime},${s.endTime||''},${s.status},${s.totals?.totalLiters||0},${s.totals?.totalRevenue||0},${s.totals?.variance||0},${s.settlement?.collectedAmount||0}\n`; });
-  const blob = new Blob([csv], { type:'text/csv' });
+  const blob = new Blob([L.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download=`${name}.csv`; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `work-report-${report.fromDate}-to-${report.toDate}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function auditView({ root }) {
