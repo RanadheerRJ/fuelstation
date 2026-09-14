@@ -44,45 +44,43 @@ export async function getDocById(collectionName, id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-// Firestore rejects `undefined` field values with an unhandled error.
-// Strip them so an optional field (e.g. a blank expense description) can never
-// silently break a save.
-function stripUndefined(value) {
-  if (Array.isArray(value)) return value.map(stripUndefined);
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
-    const out = {};
-    Object.entries(value).forEach(([k, v]) => {
-      if (v === undefined) return;
-      out[k] = stripUndefined(v);
-    });
-    return out;
-  }
-  return value;
-}
-
 export async function addDocTo(collectionName, data) {
-  const clean = stripUndefined(data);
+  // Sanitize: Firestore rejects undefined values
+  const cleanData = {};
+  Object.entries(data).forEach(([k,v])=>{
+    if (v !== undefined) cleanData[k]=v;
+  });
   if (getIsDemo()) {
-    return demo.demoAdd(collectionName, clean);
+    return demo.demoAdd(collectionName, cleanData);
   }
   const mod = await loadFirestoreModule();
   const db = getDbInstance();
   const coll = mod.collection(db, collectionName);
-  const withMeta = { ...clean, createdAt: mod.serverTimestamp() };
+  const withMeta = { ...cleanData, createdAt: mod.serverTimestamp() };
   const ref = await mod.addDoc(coll, withMeta);
-  return { id: ref.id, ...clean };
+  return { id: ref.id, ...cleanData };
 }
 
 export async function updateDocById(collectionName, id, patch) {
-  const clean = stripUndefined(patch);
   if (getIsDemo()) {
-    return demo.demoUpdate(collectionName, id, clean);
+    return demo.demoUpdate(collectionName, id, patch);
   }
   const mod = await loadFirestoreModule();
   const db = getDbInstance();
   const ref = mod.doc(db, collectionName, id);
-  await mod.updateDoc(ref, { ...clean, updatedAt: mod.serverTimestamp() });
-  return { id, ...clean };
+  await mod.updateDoc(ref, { ...patch, updatedAt: mod.serverTimestamp() });
+  return { id, ...patch };
+}
+
+export async function deleteDocById(collectionName, id) {
+  if (getIsDemo()) {
+    return demo.demoDelete(collectionName, id);
+  }
+  const mod = await loadFirestoreModule();
+  const db = getDbInstance();
+  const ref = mod.doc(db, collectionName, id);
+  await mod.deleteDoc(ref);
+  return true;
 }
 
 export async function queryDocs(collectionName, predicate) {

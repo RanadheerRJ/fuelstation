@@ -1,4 +1,4 @@
-import { listDocs, addDocTo, updateDocById, getDocById, logAudit, queryDocs } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, getDocById, deleteDocById, logAudit, queryDocs } from './firestoreService.js';
 import { getState } from '../state.js';
 
 export async function getPumps(stationId) {
@@ -44,4 +44,58 @@ export async function updateNozzle(id, patch) {
   const res = await updateDocById('nozzles', id, patch);
   await logAudit({ userId: user?.uid, stationId: patch.stationId || res?.stationId, action: 'NOZZLE_UPDATED', metadata: patch });
   return res;
+}
+
+export async function deletePump(id) {
+  const { user } = getState();
+  // Graceful checks: cannot delete if occupied by active shift
+  const pump = await getDocById('pumps', id);
+  if (!pump) throw new Error('Pump not found');
+  
+  // Check active shifts using this pump
+  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  for (const sh of activeShifts) {
+    if ((sh.nozzles||[]).some(n => n.pumpId === id)) {
+      throw new Error(`Cannot delete: Pump is busy — ${sh.employeeName} is working on it (active shift). Wait until shift ends.`);
+    }
+  }
+
+  // Check nozzles
+  const pumpNozzles = await getNozzlesForPump(id);
+  if (pumpNozzles.length > 0) {
+    // Check if any nozzle has active shift (already checked above, but double)
+    // Allow deletion but also delete its nozzles gracefully if not in active shift
+    const hasActiveNozzle = activeShifts.some(sh => (sh.nozzles||[]).some(n => pumpNozzles.some(pn => pn.id === n.nozzleId)));
+    if (hasActiveNozzle) {
+      throw new Error('Cannot delete: One of its nozzles is in active shift');
+    }
+    // Delete its nozzles first (graceful cleanup)
+    for (const nz of pumpNozzles) {
+      await deleteDocById('nozzles', nz.id);
+    }
+  }
+
+  await deleteDocById('pumps', id);
+  await logAudit({ userId: user?.uid, stationId: pump.stationId, action: 'PUMP_DELETED', metadata: { pumpId: id, pumpName: pump.name } });
+  return true;
+}
+
+export async function deleteNozzle(id) {
+  const { user } = getState();
+  const nozzle = await getDocById('nozzles', id);
+  if (!nozzle) throw new Error('Nozzle not found');
+
+  // Check active shifts
+  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  for (const sh of activeShifts) {
+    if ((sh.nozzles||[]).some(n => n.nozzleId === id)) {
+      throw new Error(`Cannot delete: Nozzle is in active shift by ${sh.employeeName}. Wait until shift ends.`);
+    }
+  }
+
+  // Graceful: allow deletion even if has history, but warn in UI (service allows)
+  // If nozzle has past shifts, we keep history but nozzle itself can be deleted (readings remain in old shifts)
+  await deleteDocById('nozzles', id);
+  await logAudit({ userId: user?.uid, stationId: nozzle.stationId, action: 'NOZZLE_DELETED', metadata: { nozzleId: id, pumpId: nozzle.pumpId } });
+  return true;
 }

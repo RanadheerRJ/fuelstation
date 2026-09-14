@@ -28,7 +28,7 @@ export async function addExpense({ stationId, shiftId, category, amount, descrip
     type: 'expense',
     category,
     amount: Number(amount),
-    description: description || '',
+    description: description || category || '',
     createdBy: user?.uid,
     createdAt: new Date().toISOString(),
   };

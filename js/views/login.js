@@ -34,8 +34,8 @@ export async function loginView({ root }) {
     root.innerHTML = `
       <div class="login-wrapper">
         <div class="login-brand">
-          <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden"><img src="./assets/icons/icon-192.png" alt="PumpPulse" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
-          <div class="app-name">PumpPulse</div>
+          <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden"><img src="./assets/icons/icon-192.png" alt="FuelOps" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
+          <div class="app-name">FuelOps</div>
           <div class="app-sub">Developer Setup • One Time Only</div>
         </div>
 
@@ -101,8 +101,8 @@ export async function loginView({ root }) {
     root.innerHTML = `
       <div class="login-wrapper">
         <div class="login-brand">
-          <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden"><img src="./assets/icons/icon-192.png" alt="PumpPulse" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
-          <div class="app-name">PumpPulse</div>
+          <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden"><img src="./assets/icons/icon-192.png" alt="FuelOps" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
+          <div class="app-name">FuelOps</div>
           <div class="app-sub">System Setup Required</div>
         </div>
         <div class="login-card" style="text-align:center">
@@ -132,8 +132,8 @@ export async function loginView({ root }) {
   root.innerHTML = `
     <div class="login-wrapper">
       <div class="login-brand">
-        <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.15)"><img src="./assets/icons/icon-192.png" alt="PumpPulse" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
-        <div class="app-name">PumpPulse</div>
+        <div class="brand-mark" style="background:transparent;padding:0;width:72px;height:72px;border-radius:20px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.15)"><img src="./assets/icons/icon-192.png" alt="FuelOps" style="width:72px;height:72px;border-radius:20px;object-fit:cover"></div>
+        <div class="app-name">FuelOps</div>
         <div class="app-sub">Pumps + Human Kind • Fuel Station Operations</div>
       </div>
 

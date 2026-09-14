@@ -15,10 +15,6 @@ export function normalizePhone(input) {
   return digits;
 }
 
-// NOTE: The "fuelops" strings below are NOT branding — they are the literal
-// Firebase Auth credentials of every existing account. The app was renamed to
-// PumpPulse, but renaming these would change the derived email/password and
-// lock out all current users. Leave them exactly as they are.
 function phoneToEmail(phone) {
   const normalized = normalizePhone(phone); // 10 digits
   return `${normalized}@fuelops.app`;

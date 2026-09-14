@@ -1,4 +1,4 @@
-# PumpPulse - Firebase Production Setup (Step by Step)
+# FuelOps - Firebase Production Setup (Step by Step)
 
 This guide makes the app **prod ready** with no dummy data.
 
@@ -33,13 +33,13 @@ Send them as a JSON block. I will update `js/firebase-config.js` and push.
 
 ### 1. Create Project
 - Go to https://console.firebase.google.com
-- **Add project** → Name: `pumppulse-prod` (or your choice)
+- **Add project** → Name: `fuelops-prod` (or your choice)
 - Disable Google Analytics for now (optional)
 - Create
 
 ### 2. Create Web App
 - Project Overview → **Add app** → Web `</>`
-- Nickname: `PumpPulse PWA`
+- Nickname: `FuelOps PWA`
 - **Don't** check hosting yet (we use GitHub Pages)
 - Register → Copy the `firebaseConfig` object → Save it
 

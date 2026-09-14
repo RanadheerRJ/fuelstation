@@ -1,5 +1,5 @@
-// PumpPulse Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'pumppulse-v32-rebrand-20260914';
+// FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
+const CACHE_NAME = 'fuelops-v42-fix-expense-undefined-description-20260914';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,7 +22,6 @@ const APP_SHELL = [
   './js/services/transactions.js',
   './js/services/notes.js',
   './js/services/reports.js',
-  './js/services/settlement.js',
   './js/services/collections.js',
   './js/views/login.js',
   './js/views/dashboard.js',
@@ -37,10 +36,7 @@ const APP_SHELL = [
   './js/views/settings.js',
   './js/views/superAdmin.js',
   './js/views/devSetup.js',
-  './assets/icons/icon.svg',
-  './assets/icons/icon-72.png',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png'
+  './assets/icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {

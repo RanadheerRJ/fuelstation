@@ -1,4 +1,4 @@
-// PumpPulse Firebase Configuration - REAL PRODUCTION - Connected to Firebase
+// FuelOps Firebase Configuration - REAL PRODUCTION - Connected to Firebase
 // Project: fuelops-a93f6
 // Connected on 2026-09-13
 

@@ -1,4 +1,4 @@
-// PumpPulse Main App
+// FuelOps Main App
 import { initFirebase, getIsDemo, getFirebaseStatus } from './firebase.js';
 import { getState, subscribe } from './state.js';
 import { initRouter, registerRoute, navigate } from './router.js';
@@ -11,7 +11,6 @@ import { employeesView } from './views/employees.js';
 import { pricesView } from './views/prices.js';
 import { shiftsListView, startShiftView, shiftDetailView, closeShiftView } from './views/shifts.js';
 import { reportsView } from './views/reports.js';
-import { collectionsView } from './views/collections.js';
 import { settingsView } from './views/settings.js';
 import { superAdminView } from './views/superAdmin.js';
 import { devSetupView } from './views/devSetup.js';
@@ -27,7 +26,7 @@ const refreshTop = document.getElementById('refreshTop');
 
 async function bootstrap() {
   await initFirebase();
-  console.log('[PumpPulse] Firebase status', getFirebaseStatus());
+  console.log('[FuelOps] Firebase status', getFirebaseStatus());
 
   // Register routes (hash based)
   registerRoute('/login', loginView);
@@ -45,9 +44,8 @@ async function bootstrap() {
   registerRoute('/shifts/:id', shiftDetailView);
   registerRoute('/shifts/:id/close', closeShiftView);
   registerRoute('/reports', reportsView);
-  registerRoute('/collections', collectionsView);
-  registerRoute('/settlements', collectionsView);
   registerRoute('/settings', settingsView);
+  // Collections removed - was confusing like jackpot, now simple To Handover in shift receipt only
   registerRoute('/super-admin', superAdminView);
   registerRoute('/invite', superAdminView);
   // Default

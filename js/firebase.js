@@ -12,7 +12,7 @@ export const getFirebaseStatus = () => ({ isDemo, configured: !isDemo });
 
 export async function initFirebase() {
   if (isDemo) {
-    console.log('[PumpPulse] Running in DEMO mode (no Firebase config)');
+    console.log('[FuelOps] Running in DEMO mode (no Firebase config)');
     return { app: null, auth: null, db: null, isDemo: true };
   }
   try {
@@ -25,10 +25,10 @@ export async function initFirebase() {
     auth = getAuth(app);
     db = getFirestore(app);
     firebaseModules = { initializeApp, getAuth, getFirestore };
-    console.log('[PumpPulse] Firebase initialized');
+    console.log('[FuelOps] Firebase initialized');
     return { app, auth, db, isDemo: false };
   } catch (e) {
-    console.warn('[PumpPulse] Firebase init failed, falling back to demo', e);
+    console.warn('[FuelOps] Firebase init failed, falling back to demo', e);
     isDemo = true;
     return { app: null, auth: null, db: null, isDemo: true };
   }

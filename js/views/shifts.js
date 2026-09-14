@@ -6,8 +6,7 @@ import { getActivePrices } from '../services/prices.js';
 import { getTransactions, addCredit, addExpense } from '../services/transactions.js';
 import { addNote, getNotes } from '../services/notes.js';
 import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue } from '../services/calc.js';
-import { collectFromShift, getHideBalancePref } from '../services/collections.js';
-import { computeShiftFinancials, getExpensesByShift } from '../services/settlement.js';
+// Collections removed - no jackpot
 
 export async function shiftsListView({ root }) {
   const { user, currentStationId } = getState();
@@ -15,7 +14,6 @@ export async function shiftsListView({ root }) {
   const stationId = currentStationId || stations[0]?.id;
   if (!stationId) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
   const shifts = await getShifts(stationId, user.role==='attendant'? { userId: user.uid }: {});
-  const expenseByShift = await getExpensesByShift(stationId);
   root.innerHTML = `
     <div class="container">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
@@ -33,14 +31,13 @@ export async function shiftsListView({ root }) {
     const isOwner = user.role === 'owner';
     if (!list.length) return `<div class="neu-card empty" style="padding:24px;text-align:center"><p>No shifts</p></div>`;
     return list.map(sh=>{
-      const shFin = computeShiftFinancials(sh, expenseByShift[sh.id]||0);
-      const v = shFin.variance;
+      const v = sh.totals?.variance||0;
       const absV = Math.abs(v);
       let varText = '';
       if (absV>0.5) {
         if (v<0) {
           if (sh.userId===user.uid) varText = `💸 To Handover ${formatCurrency(absV)}`;
-          else varText = `💰 To Collect ${formatCurrency(absV)} from ${sh.employeeName.split(' ')[0]}`;
+          else varText = `💸 To Handover ${formatCurrency(absV)} by ${sh.employeeName.split(' ')[0]}`;
         } else {
           if (sh.userId===user.uid) varText = `💰 Excess ${formatCurrency(absV)}`;
           else varText = `↩️ Excess ${formatCurrency(absV)} to ${sh.employeeName.split(' ')[0]}`;
@@ -145,12 +142,36 @@ export async function shiftDetailView({ root, params }) {
   const expenses = transactions.filter(t=>t.type==='expense');
 
   if (shift.status === 'ACTIVE') {
+    const { getPumps, getNozzles } = await import('../services/pumps.js');
+    const { getShifts } = await import('../services/shifts.js');
+    const pumps = await getPumps(shift.stationId);
+    const allNozzles = await getNozzles(shift.stationId);
+    const activeShifts = await getShifts(shift.stationId, { status: 'ACTIVE' });
+    const occupiedNozzleIds = new Set();
+    activeShifts.forEach(sh => {
+      if (sh.id === shift.id) return;
+      (sh.nozzles||[]).forEach(n=> occupiedNozzleIds.add(n.nozzleId));
+    });
+    const myNozzleIds = new Set((shift.nozzles||[]).map(n=>n.nozzleId));
+    const availableNozzles = allNozzles.filter(n=> n.status==='active' && !myNozzleIds.has(n.id) && !occupiedNozzleIds.has(n.id));
+
     root.innerHTML = `
       <div class="container" style="max-width:480px;margin:0 auto;padding-bottom:100px">
         <div style="display:flex;justify-content:space-between;align-items:center"><div><h1 class="page-title" style="font-size:20px">Active Shift</h1><p class="page-sub" style="margin-top:4px">${shift.employeeName} • Started ${formatDateTime(shift.startTime)}</p></div><span class="badge badge--info" style="padding:8px 12px;border-radius:20px">ACTIVE</span></div>
-        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Nozzles (${shift.nozzles?.length||0})</h3><div class="list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${(shift.nozzles||[]).map(n=>`<div class="neu-card neu-card--sm" style="padding:12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600;font-size:13px">${n.fuelType} • Nozzle</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Opening ${Number(n.openingReading).toFixed(2)}</div></div><div class="badge badge--neutral" style="padding:6px 10px;border-radius:20px;font-size:11px">${n.fuelType}</div></div>`).join('')}</div></div>
+        <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="font-weight:700;font-size:14px">My Nozzles (${shift.nozzles?.length||0}) • Active</h3>
+            <button id="addNozzleBtn" class="neu-btn neu-btn--primary" style="min-height:36px;padding:0 14px;border-radius:10px;font-size:13px;font-weight:700">+ Add Pump</button>
+          </div>
+          <div class="list" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+            ${(shift.nozzles||[]).map(n=>{
+              const pump = pumps.find(p=>p.id===n.pumpId);
+              return `<div class="neu-card neu-card--sm" style="padding:12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;border-left:4px solid #52c41a"><div><div style="font-weight:600;font-size:13px">${pump?.name||'Pump'} • ${n.fuelType} • Nozzle</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Opening ${Number(n.openingReading).toFixed(2)} ${n.addedAt?`• Added ${new Date(n.addedAt).toLocaleTimeString()}`:''}</div></div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge--success" style="padding:4px 8px;border-radius:12px;font-size:10px">IN USE</span><button class="neu-btn remove-nozzle-btn" data-id="${n.nozzleId}" style="min-height:28px;min-width:28px;border-radius:50%;padding:0;font-size:12px">✕</button></div></div>`;
+            }).join('')}
+          </div>
+          ${availableNozzles.length===0 ? `<div style="margin-top:10px;padding:10px;background:#f0f0f0;border-radius:8px;text-align:center;font-size:11px;color:var(--text-secondary)">No more free nozzles • All pumps occupied or already in your shift</div>` : `<div style="margin-top:10px;padding:8px;background:#f6ffed;border-radius:8px;border:1px solid #b7eb8f;font-size:11px;color:#389e0d;text-align:center">${availableNozzles.length} free nozzle(s) available • Tap + Add Pump to add another</div>`}
+        </div>
         
-        <!-- Clean handy buttons - major actions out -->
         <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <button class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600" onclick="document.getElementById('creditModal').style.display='flex'">💳 + Credit</button>
           <button class="neu-btn" style="min-height:48px;border-radius:12px;font-weight:600" onclick="document.getElementById('expenseModal').style.display='flex'">🧾 + Expense</button>
@@ -158,73 +179,120 @@ export async function shiftDetailView({ root, params }) {
           <button class="neu-btn neu-btn--primary" style="min-height:48px;border-radius:12px;font-weight:700" onclick="location.hash='#/shifts/${shift.id}/close'">Close Shift →</button>
         </div>
 
+        <!-- Add Pump Modal -->
+        <div id="addPumpModal" class="modal-backdrop" style="display:none">
+          <div class="modal" style="border-radius:16px;max-width:420px;max-height:80vh;overflow:auto">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <h3 style="font-weight:800">⛽ Add Pump / Nozzle to Active Shift</h3>
+              <button class="neu-btn" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('addPumpModal').style.display='none'">✕</button>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-top:8px">You are on 24hr shift and need another pump? Select free nozzle and enter opening reading. It will be added to your current active shift.</p>
+            ${availableNozzles.length===0 ? `<div style="margin-top:16px;padding:16px;background:#fff1f0;border-radius:12px;border:1px solid #ffa39e;text-align:center"><div style="font-size:24px">⛽</div><h4 style="margin-top:8px">No free nozzles</h4><p style="font-size:12px;color:var(--text-secondary);margin-top:4px">All nozzles are occupied by other active shifts or already in your shift. Free a pump first or ask manager.</p></div>` : `
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px" id="availableList">
+              ${availableNozzles.map(n=>{
+                const pump = pumps.find(p=>p.id===n.pumpId);
+                return `<div class="neu-card" style="padding:14px;border-radius:12px;cursor:pointer;border:1.5px solid var(--border)" data-nozzle="${n.id}" data-pump="${n.pumpId}" data-fuel="${n.fuelType}" data-last="${n.lastReading||0}">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div><div style="font-weight:700;font-size:14px">${pump?.name||'Pump'} • Nozzle ${n.number} • ${n.fuelType}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Last: ${Number(n.lastReading||0).toFixed(2)} • ${n.status}</div></div>
+                    <span class="badge badge--success" style="padding:4px 8px;border-radius:12px;font-size:10px">FREE</span>
+                  </div>
+                  <div style="margin-top:10px;display:none" class="add-form">
+                    <label class="label" style="font-size:11px">Opening Reading for this nozzle</label>
+                    <input class="neu-input opening-add" type="number" step="0.01" value="${n.lastReading||0}" style="min-height:44px;border-radius:10px;font-size:15px;font-weight:600">
+                    <button class="neu-btn neu-btn--primary confirm-add" style="margin-top:10px;min-height:44px;border-radius:10px;width:100%;font-weight:700">✓ Add to My Shift</button>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+            `}
+          </div>
+        </div>
+
+
         <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Credits (${credits.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${c.customer}</span><span style="font-weight:700">${formatCurrency(c.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No credits</p>`}</div></div>
         <div class="neu-card" style="margin-top:12px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Expenses (${expenses.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${e.category}</span><span style="font-weight:700">${formatCurrency(e.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No expenses</p>`}</div></div>
       </div>
-      <div id="creditModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Credit</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('creditModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Customer</label><input id="cr_customer" class="neu-input" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount (₹)</label><input id="cr_amount" class="neu-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" style="min-height:44px;border-radius:10px;font-size:16px;font-weight:600"></div><div id="cr_alert"></div><button id="saveCredit" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Credit</button></div></div></div>
-      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Maintenance</option><option>Petty Cash</option><option>Other</option></select></div><div><label class="label">Amount (₹)</label><input id="ex_amount" class="neu-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" style="min-height:44px;border-radius:10px;font-size:16px;font-weight:600"></div><div><label class="label">Note (optional)</label><input id="ex_desc" class="neu-input" placeholder="e.g. 2 litre testing petrol" style="min-height:44px;border-radius:10px"></div><div id="ex_alert"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
-      <div id="noteModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Note</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('noteModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Note</label><textarea id="note_text" class="neu-input" rows="3" style="border-radius:10px"></textarea></div><div id="note_alert"></div><button id="saveNote" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Note</button></div></div></div>
+      <div id="creditModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Credit</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('creditModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Customer</label><input id="cr_customer" class="neu-input" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount</label><input id="cr_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveCredit" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Credit</button></div></div></div>
+      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Maintenance</option><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Petty Cash</option><option>Other</option></select></div><div><label class="label">Amount</label><input id="ex_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
+      <div id="noteModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Note</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('noteModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Note</label><textarea id="note_text" class="neu-input" rows="3" style="border-radius:10px"></textarea></div><button id="saveNote" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Note</button></div></div></div>
     `;
-    // Inline feedback so a failed save is never silent, and the typed values survive.
-    const showErr = (slotId, msg) => {
-      const el = root.querySelector('#' + slotId);
-      if (el) el.innerHTML = `<div class="alert alert--danger" style="font-size:12px;padding:10px;border-radius:10px">⚠️ ${msg}</div>`;
-      else alert(msg);
-    };
-    const clearErr = (slotId) => { const el = root.querySelector('#' + slotId); if (el) el.innerHTML = ''; };
+    root.querySelector('#saveCredit').addEventListener('click', async ()=>{ const customer = root.querySelector('#cr_customer').value.trim(); const amount = root.querySelector('#cr_amount').value; if (!customer || !amount) return alert('Fill required'); try { await addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }); location.reload(); } catch(e){ alert(e.message); } });
+    root.querySelector('#saveExpense').addEventListener('click', async ()=>{ const category = root.querySelector('#ex_cat').value; const amount = root.querySelector('#ex_amount').value; if (!amount) return alert('Amount required'); try { await addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount, description: category }); location.reload(); } catch(e){ alert(e.message); } });
+    root.querySelector('#saveNote').addEventListener('click', async ()=>{ const text = root.querySelector('#note_text').value.trim(); if (!text) return alert('Note required'); try { await addNote({ stationId: shift.stationId, shiftId: shift.id, text }); location.reload(); } catch(e){ alert(e.message); } });
 
-    // Re-render just this shift view instead of reloading the whole page, so the
-    // attendant stays exactly where they were mid-shift.
-    const refresh = () => shiftDetailView({ root, params });
-
-    async function withButton(btn, slotId, fn) {
-      if (btn.disabled) return;
-      const label = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        await fn();
-        await refresh();
-      } catch (e) {
-        console.error('[PumpPulse] save failed', e);
-        showErr(slotId, e?.message || 'Could not save. Check your connection and try again.');
-        btn.disabled = false;
-        btn.textContent = label;
-      }
-    }
-
-    root.querySelector('#saveCredit').addEventListener('click', (ev)=>{
-      clearErr('cr_alert');
-      const customer = root.querySelector('#cr_customer').value.trim();
-      const amount = Number(root.querySelector('#cr_amount').value);
-      if (!customer) return showErr('cr_alert', 'Enter the customer name');
-      if (!amount || isNaN(amount) || amount <= 0) return showErr('cr_alert', 'Enter a valid amount');
-      withButton(ev.currentTarget, 'cr_alert', ()=> addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }));
+    // Add Pump / Nozzle to active shift
+    root.querySelector('#addNozzleBtn')?.addEventListener('click', ()=>{
+      document.getElementById('addPumpModal').style.display='flex';
     });
 
-    root.querySelector('#saveExpense').addEventListener('click', (ev)=>{
-      clearErr('ex_alert');
-      const category = root.querySelector('#ex_cat').value;
-      const amount = Number(root.querySelector('#ex_amount').value);
-      const description = root.querySelector('#ex_desc')?.value.trim() || category;
-      if (!amount || isNaN(amount) || amount <= 0) return showErr('ex_alert', 'Enter a valid amount');
-      withButton(ev.currentTarget, 'ex_alert', ()=> addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount, description }));
+    // Select nozzle to add - show opening form
+    root.querySelectorAll('#availableList .neu-card').forEach(card=>{
+      card.addEventListener('click', (e)=>{
+        if (e.target.classList.contains('confirm-add') || e.target.classList.contains('opening-add')) return;
+        // Hide all forms, show this one
+        root.querySelectorAll('#availableList .add-form').forEach(f=>f.style.display='none');
+        root.querySelectorAll('#availableList .neu-card').forEach(c=>c.style.borderColor='var(--border)');
+        const form = card.querySelector('.add-form');
+        if (form) {
+          form.style.display='block';
+          card.style.borderColor='#52c41a';
+          card.style.background='#f6ffed';
+        }
+      });
     });
 
-    root.querySelector('#saveNote').addEventListener('click', (ev)=>{
-      clearErr('note_alert');
-      const text = root.querySelector('#note_text').value.trim();
-      if (!text) return showErr('note_alert', 'Write something first');
-      withButton(ev.currentTarget, 'note_alert', ()=> addNote({ stationId: shift.stationId, shiftId: shift.id, text }));
+    // Confirm add nozzle
+    root.querySelectorAll('.confirm-add').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const card = btn.closest('.neu-card');
+        const nozzleId = card.dataset.nozzle;
+        const pumpId = card.dataset.pump;
+        const fuelType = card.dataset.fuel;
+        const openingInput = card.querySelector('.opening-add');
+        const opening = Number(openingInput.value);
+        if (isNaN(opening) || opening < 0) return alert('Enter valid opening reading');
+        
+        if (!confirm(`Add ${fuelType} nozzle to your active shift with opening ${opening}?\n\nThis pump will be added to your account and you can close it together with current shift.`)) return;
+        
+        btn.disabled = true;
+        btn.textContent = 'Adding...';
+        try {
+          const { addNozzleToShift } = await import('../services/shifts.js');
+          await addNozzleToShift(shift.id, { nozzleId, pumpId, fuelType, openingReading: opening });
+          alert(`✅ Added ${fuelType} pump to your shift!`);
+          location.reload();
+        } catch(err){
+          alert('Failed: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = '✓ Add to My Shift';
+        }
+      });
     });
+
+    // Remove nozzle from active shift
+    root.querySelectorAll('.remove-nozzle-btn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const nozzleId = btn.dataset.id;
+        if ((shift.nozzles||[]).length <= 1) return alert('Cannot remove last nozzle - at least one required');
+        if (!confirm('Remove this nozzle from your active shift? You can add it again later.')) return;
+        try {
+          const { removeNozzleFromShift } = await import('../services/shifts.js');
+          await removeNozzleFromShift(shift.id, nozzleId);
+          alert('✅ Removed nozzle from shift');
+          location.reload();
+        } catch(err){ alert(err.message); }
+      });
+    });
+
 
   } else {
     const t = shift.totals || {};
     const totalCredits = credits.reduce((a,c)=>a+Number(c.amount||0),0);
     const totalExpenses = expenses.reduce((a,c)=>a+Number(c.amount||0),0);
-    const fin = computeShiftFinancials(shift, totalExpenses);
-    const isShort = fin.toCollect > 0.5;
-    const isExcess = fin.toReturn > 0.5;
+    const isShort = (t.variance||0) < -0.5;
+    const isExcess = (t.variance||0) > 0.5;
     const isRejected = shift.status === 'REJECTED';
     const isPending = shift.status === 'PENDING_REVIEW';
 
@@ -264,7 +332,7 @@ export async function shiftDetailView({ root, params }) {
 
         <div class="neu-card" style="padding:0;overflow:hidden;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
           <div style="background:#232f3e;color:white;padding:18px;display:flex;justify-content:space-between;align-items:center">
-            <div><div style="font-weight:800;font-size:18px;letter-spacing:0.5px">PumpPulse</div><div style="font-size:11px;opacity:0.8;margin-top:3px">Shift Receipt • ${stationName}</div></div>
+            <div><div style="font-weight:800;font-size:18px;letter-spacing:0.5px">FuelOps</div><div style="font-size:11px;opacity:0.8;margin-top:3px">Shift Receipt • ${stationName}</div></div>
             <div style="text-align:right"><div style="font-size:11px;opacity:0.8">Shift ID</div><div style="font-weight:700;font-size:14px">#${shift.id.slice(0,6).toUpperCase()}</div><div style="font-size:10px;margin-top:6px"><span class="badge" style="background:${shift.status==='APPROVED'?'#52c41a': shift.status==='PENDING_REVIEW'?'#faad14':'#ff4d4f'};color:white;border:none;font-size:10px;padding:6px 10px;border-radius:20px">${shift.status}</span></div></div>
           </div>
           <div style="padding:16px;background:#f8f9fa;border-bottom:1px solid #eee">
@@ -316,14 +384,14 @@ export async function shiftDetailView({ root, params }) {
                   } else if (netVariance < -0.5) {
                     amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💸 To Handover to Owner'; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to give • Owner will collect after approval • Testing reduces whole balance`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = '💸 To Handover to Owner'; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to give • Owner will receive after approval • Testing reduces whole balance`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     } else {
-                      label = `💰 To Collect from ${shift.employeeName}`; desc = `Net ${formatCurrency(net)} - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to collect from ${shift.employeeName} after approval • Expenses reduce whole amount`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
+                      label = `💸 To Handover to Owner`; desc = `Net ${formatCurrency(net)} (Gross ${formatCurrency(gross)} - Expenses ${formatCurrency(totalExpenses)}) - Payments ${formatCurrency(paid)} = ${formatCurrency(absNet)} to handover • Simple, no jackpot`; bg = '#fff1f0'; border = '#ffa39e'; color = '#cf1322';
                     }
                   } else {
                     amount = absNet;
                     if (isOwnerOfShift) {
-                      label = '💰 Excess with You'; desc = `You collected ${formatCurrency(absNet)} extra over net ${formatCurrency(net)} • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
+                      label = '💰 Excess with You'; desc = `You have ${formatCurrency(absNet)} extra over net ${formatCurrency(net)} • Owner will adjust`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     } else {
                       label = `↩️ Excess to Return to ${shift.employeeName}`; desc = `Return ${formatCurrency(absNet)} to ${shift.employeeName} • Net ${formatCurrency(net)}`; bg = '#f6ffed'; border = '#b7eb8f'; color = '#389e0d';
                     }
@@ -332,31 +400,12 @@ export async function shiftDetailView({ root, params }) {
                 })()}
               </div>
             </div>
-            ${(() => {
-              if (shift.status !== 'APPROVED') return '';
-              const absV = fin.toCollect > 0.5 ? fin.toCollect : fin.toReturn;
-              if (absV < 0.5) return '';
-              const collected = fin.collected;
-              const returned = fin.returned;
-              const isShort = fin.toCollect > 0.5;
-              const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
-              const isSettled = fin.isSettled;
-              const hideBal = getHideBalancePref(shift.stationId);
-              const fmt = (val) => hideBal ? '••••' : formatCurrency(val);
-              if (isSettled) {
-                return `<div style="margin-top:14px;padding:12px;background:#f6ffed;border-radius:10px;border:1px solid #b7eb8f"><div style="font-size:12px;font-weight:700;color:#389e0d">✅ Settled • ${isShort ? 'Collected' : 'Returned'} ${fmt(isShort?collected:returned)}</div><div style="font-size:10px;color:var(--text-secondary);margin-top:4px">By ${shift.settlement?.collectedByName||shift.settlement?.returnedByName||'Owner'} • ${shift.settlement?.settledAt? new Date(shift.settlement.settledAt).toLocaleString():''}</div></div>`;
-              }
-              if (!canReview) return `<div style="margin-top:14px;padding:12px;background:#fff1f0;border-radius:10px;border:1px solid #ffa39e"><div style="font-size:12px;font-weight:600;color:#cf1322">⏳ Pending Collection • ${fmt(pending)} ${isShort?'to collect from staff':'to return to staff'}</div><div style="font-size:10px;color:var(--text-secondary);margin-top:2px">Owner will collect soon</div></div>`;
-              return `<div style="margin-top:14px;padding:14px;background:#fff1f0;border-radius:12px;border:1.5px solid #ffa39e">
-                <div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#cf1322">${isShort?'💰 To Collect':'↩️ To Return'}</div><div style="font-weight:800;font-size:16px;color:#cf1322;margin-top:2px">${fmt(pending)} pending</div><div style="font-size:10px;color:var(--text-secondary)">Total ${fmt(absV)} • ${isShort?`Collected ${fmt(collected)}`:`Returned ${fmt(returned)}`}</div></div><button id="collectThisShift" class="neu-btn neu-btn--primary" style="min-height:44px;padding:0 16px;border-radius:10px;font-weight:700;background:#52c41a;border-color:#52c41a">${isShort?'Collect':'Return'}</button></div>
-                <div style="margin-top:10px;display:flex;gap:8px"><button id="collectFull" class="neu-btn" style="flex:1;min-height:40px;border-radius:10px;font-size:12px;font-weight:600;background:#52c41a;color:white;border:none">Collect Full ${fmt(pending)}</button><button class="neu-btn" style="flex:1;min-height:40px;border-radius:10px;font-size:12px" onclick="location.hash='#/collections'">Go to Collections</button></div>
-              </div>`;
-            })()}
+            <div style="margin-top:14px;padding:10px;background:#f8f9fa;border-radius:10px;border:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">✅ Simple: No jackpot collections • To Handover = Net - Payments • Check Reports for totals</div></div>
             ${credits.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Credits • ${formatCurrency(totalCredits)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="credit" data-field="credits" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${c.customer}</span><span style="font-weight:600">${formatCurrency(c.amount)}</span></div>`).join('')}</div>` : ''}
             ${expenses.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Expenses • ${formatCurrency(totalExpenses)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="expense" data-field="expenses" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${e.category}</span><span style="font-weight:600">${formatCurrency(e.amount)}</span></div>`).join('')}</div>` : ''}
             ${notes.length ? `<div style="margin-top:18px;padding:12px;background:#fffbe6;border-radius:10px;border:0.5px solid #ffe58f"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#ad6800;margin-bottom:8px">Note</div><div style="font-size:13px;line-height:1.4">${notes[0]?.text||''}</div></div>` : ''}
           </div>
-          <div style="padding:14px 18px;background:#f8f9fa;border-top:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-tertiary)">Thank you • PumpPulse • ${stationName}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">Generated ${new Date().toLocaleString('en-IN')}</div></div>
+          <div style="padding:14px 18px;background:#f8f9fa;border-top:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-tertiary)">Thank you • FuelOps • ${stationName}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">Generated ${new Date().toLocaleString('en-IN')}</div></div>
         </div>
 
         ${isPending && canReview ? `
@@ -432,31 +481,7 @@ export async function shiftDetailView({ root, params }) {
       });
     }
 
-    root.querySelector('#collectThisShift')?.addEventListener('click', async ()=>{
-      const isShort = fin.toCollect > 0.5;
-      const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
-      const amountStr = prompt(`${isShort?'Collect from':'Return to'} ${shift.employeeName}: Enter amount (pending ${formatCurrency(pending)}):`, pending.toFixed(2));
-      if (!amountStr) return;
-      const amount = Number(amountStr);
-      if (isNaN(amount) || amount<=0) return alert('Invalid amount');
-      if (amount > pending + 0.01) return alert(`Cannot ${isShort?'collect':'return'} more than pending ${formatCurrency(pending)}`);
-      const notes = prompt('Notes (optional):', isShort?`Collected from ${shift.employeeName}`:`Returned to ${shift.employeeName}`) || '';
-      try {
-        await collectFromShift(shift.id, amount, notes, isShort?'collect':'return');
-        alert(`✅ ${formatCurrency(amount)} ${isShort?'collected from':'returned to'} ${shift.employeeName}`);
-        location.reload();
-      } catch(e){ alert(e.message); }
-    });
-    root.querySelector('#collectFull')?.addEventListener('click', async ()=>{
-      const isShort = fin.toCollect > 0.5;
-      const pending = isShort ? fin.pendingCollect : fin.pendingReturn;
-      if (!confirm(`Collect full ${formatCurrency(pending)} ${isShort?'from':'to'} ${shift.employeeName}?`)) return;
-      try {
-        await collectFromShift(shift.id, pending, `Full settlement for shift`, isShort?'collect':'return');
-        alert(`✅ Settled! ${formatCurrency(pending)} ${isShort?'collected':'returned'}`);
-        location.reload();
-      } catch(e){ alert(e.message); }
-    });
+    // Collections removed - no jackpot collect buttons, simple To Handover in receipt only
 
     root.querySelector('#approveBtn')?.addEventListener('click', async ()=>{
       if (!confirm('Approve this shift?')) return;
@@ -631,7 +656,7 @@ export async function closeShiftView({ root, params }) {
       if (cash > 0.5) {
         // Physical cash to give now is cashAfterExpenses, but total short is net - payments
         // For simplicity, toHandover = cashAfterExpenses if cashAfterExpenses <= absVariance, else absVariance
-        // Actually correct: attendant gives cashAfterExpenses now, remaining short tracked as To Collect
+        // Actually correct: attendant gives cashAfterExpenses now, remaining short tracked as To Handover
         // But user wants expense to reduce whole balance, so toHandover = net - payments
         toHandover = Math.max(0, netRevenue - totalPayments);
       }
@@ -639,7 +664,7 @@ export async function closeShiftView({ root, params }) {
       // EXCESS
       toHandover = cashAfterExpenses;
       toHandoverLabel = '💰 Excess with You';
-      varDesc = `You collected ${formatCurrency(absVariance)} extra over net revenue ${formatCurrency(netRevenue)} • Cash after expenses ${formatCurrency(cashAfterExpenses)} to handover (excess will be returned)`;
+      varDesc = `You have ${formatCurrency(absVariance)} extra over net revenue ${formatCurrency(netRevenue)} • Cash after expenses ${formatCurrency(cashAfterExpenses)} to handover (excess will be returned)`;
       varBg = '#f6ffed'; varBorder = '#b7eb8f'; varColor = '#389e0d';
     }
 
@@ -719,7 +744,7 @@ export async function closeShiftView({ root, params }) {
       if (isDirectApprove && canReview) {
         // Admin fixing and approving directly
         await approveShift(shift.id);
-        alert(`✅ Fixed and Approved! Owner will collect money now.`);
+        alert(`✅ Fixed and Approved! Owner will receive money now.`);
         location.hash = `#/shifts/${shift.id}`;
       } else {
         location.hash = `#/shifts/${shift.id}`;
@@ -729,7 +754,7 @@ export async function closeShiftView({ root, params }) {
 
   root.querySelector('#submitClose').addEventListener('click', ()=> handleSubmit(false));
   root.querySelector('#adminApprove')?.addEventListener('click', ()=> {
-    if (!confirm(`Admin: Fix and Approve directly?\n\nThis will:\n• Fix what's wrong\n• Approve shift\n• Owner can collect money now\n\nContinue?`)) return;
+    if (!confirm(`Admin: Fix and Approve directly?\n\nThis will:\n• Fix what's wrong\n• Approve shift\n• Owner can handover now\n\nContinue?`)) return;
     handleSubmit(true);
   });
 }
@@ -738,7 +763,7 @@ function generateShiftCSV(shift, credits, expenses) {
   let csv = `Shift ID,${shift.id}\nEmployee,${shift.employeeName}\nStart,${shift.startTime}\nEnd,${shift.endTime||''}\nStatus,${shift.status}\n\n`;
   csv += `Nozzle ID,Fuel Type,Opening,Closing,Liters,Price,Revenue\n`;
   (shift.nozzles||[]).forEach(n=>{ csv += `${n.nozzleId},${n.fuelType},${n.openingReading},${n.closingReading||''},${n.litersSold||''},${n.price||''},${n.revenue||''}\n`; });
-  csv += `\nTotal Revenue,${shift.totals?.totalRevenue||0}\nTotal Payments,${shift.totals?.totalPayments||0}\nVariance,${shift.totals?.variance||0}\nExpenses,${expenses.reduce((a,e)=>a+Number(e.amount||0),0)}\n\n`;
+  csv += `\nTotal Revenue,${shift.totals?.totalRevenue||0}\nTotal Payments,${shift.totals?.totalPayments||0}\nVariance,${shift.totals?.variance||0}\n\n`;
   if (shift.correctionRequests?.length) { csv += `Correction Requests\nType,Field,Message,Requested By\n`; shift.correctionRequests.forEach(cr=>{ csv += `${cr.type},${cr.field},${cr.message},${cr.requestedByName||''}\n`; }); }
   return csv;
 }
