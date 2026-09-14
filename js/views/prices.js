@@ -4,6 +4,17 @@ import { getPrices, getActivePrices, setPrice } from '../services/prices.js';
 import { getShifts } from '../services/shifts.js';
 import { addDelivery, getDeliveries, getStockSummary, FUEL_LABEL } from '../services/stock.js';
 import { formatCurrency, formatDateTime, formatLiters } from '../services/calc.js';
+import { formatRelativeTime, formatBusinessDateTime } from '../services/datetime.js';
+
+// Each fuel gets its own colour so a price card is identifiable at a glance,
+// matching the convention on the pumps: green petrol, black/grey diesel.
+const FUEL_THEME = {
+  'Petrol':         { bg:'#f6ffed', border:'#b7eb8f', text:'#237804', dot:'#52c41a' },
+  'Diesel':         { bg:'#f0f5ff', border:'#adc6ff', text:'#1d39c4', dot:'#2f54eb' },
+  'Premium Petrol': { bg:'#fff7e6', border:'#ffd591', text:'#ad4e00', dot:'#fa8c16' },
+  'CNG':            { bg:'#f9f0ff', border:'#d3adf7', text:'#531dab', dot:'#722ed1' },
+};
+const themeFor = ft => FUEL_THEME[ft] || { bg:'#fafafa', border:'#e0e0e0', text:'#434343', dot:'#8c8c8c' };
 
 export async function pricesView({ root }) {
   const { currentStationId, user } = getState();
@@ -13,6 +24,11 @@ export async function pricesView({ root }) {
   const station = stations.find(s=>s.id===stationId);
   const activePrices = await getActivePrices(stationId);
   const history = await getPrices(stationId);
+
+  // Most recent price change across all fuels, for the "last updated" strip.
+  const lastPriceChange = [...history]
+    .filter(h => h?.effectiveFrom)
+    .sort((a,b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom))[0] || null;
 
   const isOwner = user.role === 'owner';
   const isAttendant = user.role === 'attendant';
@@ -26,7 +42,8 @@ export async function pricesView({ root }) {
         <div class="grid" style="margin-top:16px;gap:12px">
           ${['Petrol','Diesel','Premium Petrol','CNG'].map(ft=>{
             const p = activePrices[ft];
-            return `<div class="neu-card" style="padding:16px;border-radius:14px;text-align:center"><div style="font-weight:700;font-size:13px">${ft}</div><div style="font-size:22px;font-weight:800;margin-top:8px">${p?formatCurrency(p.price)+' /L': 'Not set'}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${p? 'Active now' : ''}</div></div>`;
+            const t = themeFor(ft);
+            return `<div style="background:${t.bg};border:1px solid ${t.border};border-left:4px solid ${t.dot};padding:16px;border-radius:14px;text-align:center"><div style="font-weight:700;font-size:13px;color:${t.text}">${ft}</div><div style="font-size:24px;font-weight:800;margin-top:8px;color:${t.text}">${p?formatCurrency(p.price)+'<span style="font-size:12px;font-weight:600;opacity:0.7"> /L</span>': '<span style="font-size:15px;color:var(--text-secondary)">Not set</span>'}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${p? 'Updated '+formatRelativeTime(p.effectiveFrom) : ''}</div></div>`;
           }).join('')}
         </div>
         <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:10px;border:0.5px solid var(--border)"><div style="font-size:11px;color:var(--text-secondary);text-align:center">🔒 Attendant view: Only current active prices. No price history, no edit. Owner/Manager manages prices.</div></div>
@@ -59,7 +76,7 @@ export async function pricesView({ root }) {
       <p class="page-sub">${station.name} • ${isOwner ? 'Owner • Full visibility' : 'Manager • Can edit'}</p>
 
       <!-- 1. PRICES -->
-      <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:16px">
+      <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:16px;border-top:3px solid #2f54eb">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3 style="font-weight:800;font-size:14px">💰 Today's Prices</h3>
           <span style="font-size:11px;color:var(--text-secondary)">Tap Edit to change</span>
@@ -67,19 +84,36 @@ export async function pricesView({ root }) {
         <div class="grid" style="margin-top:12px;gap:10px">
           ${['Petrol','Diesel','Premium Petrol','CNG'].map(ft=>{
             const p = activePrices[ft];
+            const t = themeFor(ft);
             return `
-              <div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+              <div style="background:${t.bg};border:1px solid ${t.border};border-left:4px solid ${t.dot};border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
                 <div>
-                  <div style="font-weight:700;font-size:13px">${ft}</div>
-                  <div style="font-size:20px;font-weight:800;margin-top:4px">${p?formatCurrency(p.price)+' /L': '<span style="font-size:14px;color:var(--text-secondary)">Not set</span>'}</div>
-                  <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">${p? 'From '+formatDateTime(p.effectiveFrom):''}</div>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="width:8px;height:8px;border-radius:50%;background:${t.dot};display:inline-block"></span>
+                    <span style="font-weight:700;font-size:13px;color:${t.text}">${ft}</span>
+                  </div>
+                  <div style="font-size:22px;font-weight:800;margin-top:4px;color:${t.text}">${p?formatCurrency(p.price)+'<span style="font-size:12px;font-weight:600;opacity:0.7"> /L</span>': '<span style="font-size:14px;color:var(--text-secondary);font-weight:600">Not set</span>'}</div>
                 </div>
-                ${canManage ? `<button class="neu-btn edit-price" data-fuel="${ft}" style="min-height:38px;padding:0 14px;border-radius:10px;font-weight:600">Edit</button>` : ''}
+                ${canManage ? `<button class="neu-btn edit-price" data-fuel="${ft}" style="min-height:38px;padding:0 14px;border-radius:10px;font-weight:600;background:white;border:1px solid ${t.border};color:${t.text}">Edit</button>` : ''}
               </div>
             `;
           }).join('')}
         </div>
       </div>
+
+      <!-- Live freshness of the prices above -->
+      <div id="priceStatus" style="margin-top:8px;padding:10px 14px;background:${lastPriceChange?'#f6ffed':'#fff7e6'};border:1px solid ${lastPriceChange?'#b7eb8f':'#ffd591'};border-radius:12px;display:flex;align-items:center;gap:8px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${lastPriceChange?'#52c41a':'#fa8c16'};display:inline-block;animation:pulse 2s infinite;flex-shrink:0"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700;color:${lastPriceChange?'#237804':'#ad4e00'}">
+            ${lastPriceChange ? `Last updated <span id="priceAgo">${formatRelativeTime(lastPriceChange.effectiveFrom)}</span>` : 'No price set yet'}
+          </div>
+          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">
+            ${lastPriceChange ? `${lastPriceChange.fuelType} → ${formatCurrency(lastPriceChange.price)} • ${formatBusinessDateTime(lastPriceChange.effectiveFrom)}` : 'Set a price so attendants see the right rate.'}
+          </div>
+        </div>
+      </div>
+      <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>
 
       <!-- 2. TANKER INTAKE / STOCK -->
       <div class="neu-card" style="margin-top:14px;padding:16px;border-radius:16px">
@@ -142,6 +176,18 @@ export async function pricesView({ root }) {
     btn.addEventListener('click', ()=> openPriceModal(btn.dataset.fuel));
   });
   root.querySelector('#addDelivery')?.addEventListener('click', openDeliveryModal);
+
+  // Keep "last updated" ticking without re-rendering the page. The interval is
+  // cleared as soon as the node leaves the DOM, so navigating away stops it.
+  if (lastPriceChange) {
+    const agoEl = root.querySelector('#priceAgo');
+    if (agoEl) {
+      const timer = setInterval(()=>{
+        if (!root.querySelector('#priceAgo')) { clearInterval(timer); return; }
+        root.querySelector('#priceAgo').textContent = formatRelativeTime(lastPriceChange.effectiveFrom);
+      }, 30000);
+    }
+  }
 
   function openPriceModal(fuelType) {
     modalRoot.innerHTML = `

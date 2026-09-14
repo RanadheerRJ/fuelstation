@@ -6,31 +6,101 @@ import { getActivePrices } from '../services/prices.js';
 import { getTransactions, addCredit, addExpense } from '../services/transactions.js';
 import { addNote, getNotes } from '../services/notes.js';
 import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue } from '../services/calc.js';
+import { formatBusinessDate, formatBusinessTime } from '../services/datetime.js';
 // Collections removed - no jackpot
 
-export async function shiftsListView({ root }) {
+const STATUS_META = {
+  ACTIVE:         { label: 'Running',  badge: 'badge--info',    dot: '#1890ff' },
+  PENDING_REVIEW: { label: 'To Review', badge: 'badge--warning', dot: '#fa8c16' },
+  APPROVED:       { label: 'Approved', badge: 'badge--success', dot: '#52c41a' },
+  REJECTED:       { label: 'Rejected', badge: 'badge--danger',  dot: '#cf1322' },
+};
+
+export async function shiftsListView({ root, query = {} }) {
   const { user, currentStationId } = getState();
   const stations = await getStationsForCurrentUser();
   const stationId = currentStationId || stations[0]?.id;
   if (!stationId) { root.innerHTML=`<div class="container"><div class="neu-card empty"><p>No station</p></div></div>`; return; }
   const shifts = await getShifts(stationId, user.role==='attendant'? { userId: user.uid }: {});
+
+  // The list used to dump every shift ever recorded, newest-last, with the
+  // work that actually needs attention buried somewhere in the middle.
+  // Default to what is live or waiting on someone, and keep history one tap
+  // away behind an explicit filter.
+  const byNewest = [...shifts].sort((a,b)=> new Date(b.startTime||0) - new Date(a.startTime||0));
+  const counts = {
+    ALL: byNewest.length,
+    ACTIVE: byNewest.filter(s=>s.status==='ACTIVE').length,
+    PENDING_REVIEW: byNewest.filter(s=>s.status==='PENDING_REVIEW').length,
+    APPROVED: byNewest.filter(s=>s.status==='APPROVED').length,
+    REJECTED: byNewest.filter(s=>s.status==='REJECTED').length,
+  };
+  const openCount = counts.ACTIVE + counts.PENDING_REVIEW;
+
+  // Land on OPEN when there is anything to act on, otherwise show recent history.
+  const VALID = ['OPEN','ACTIVE','PENDING_REVIEW','APPROVED','REJECTED','ALL'];
+  const initial = VALID.includes(query.status) ? query.status : (openCount ? 'OPEN' : 'ALL');
+  let current = initial;
+  const RECENT_LIMIT = 15;
+  let showingAll = false;
+
+  const applyFilter = (status) => {
+    if (status === 'OPEN') return byNewest.filter(s=>s.status==='ACTIVE'||s.status==='PENDING_REVIEW');
+    if (status === 'ALL') return byNewest;
+    return byNewest.filter(s=>s.status===status);
+  };
+
+  const CHIPS = [
+    { key:'OPEN',           label:'Open',      count:openCount },
+    { key:'ACTIVE',         label:'Running',   count:counts.ACTIVE },
+    { key:'PENDING_REVIEW', label:'To Review', count:counts.PENDING_REVIEW },
+    { key:'APPROVED',       label:'Approved',  count:counts.APPROVED },
+    { key:'REJECTED',       label:'Rejected',  count:counts.REJECTED },
+    { key:'ALL',            label:'All',       count:counts.ALL },
+  ];
+
   root.innerHTML = `
-    <div class="container">
+    <div class="container" style="padding-bottom:110px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <div><h1 class="page-title">Shifts</h1><p class="page-sub">${shifts.length} shift(s) • ${stations.find(s=>s.id===stationId)?.name}</p></div>
-        <button class="neu-btn neu-btn--primary" style="min-height:44px;padding:0 18px;font-weight:700;border-radius:12px" onclick="location.hash='#/shifts/start'">+ Start Shift</button>
+        <div style="min-width:0">
+          <h1 class="page-title">Shifts</h1>
+          <p class="page-sub">${stations.find(s=>s.id===stationId)?.name}</p>
+        </div>
+        <button class="neu-btn neu-btn--primary" style="min-height:44px;padding:0 18px;font-weight:700;border-radius:12px;white-space:nowrap" onclick="location.hash='#/shifts/start'">+ Start Shift</button>
       </div>
-      <div style="margin-top:16px;display:flex;gap:8px;overflow:auto;padding-bottom:8px">
-        ${['ALL','ACTIVE','PENDING_REVIEW','APPROVED','REJECTED'].map(s=>`<button class="chip filter-btn" data-status="${s}" style="min-height:36px;padding:0 14px;border-radius:20px;font-size:13px;white-space:nowrap">${s}</button>`).join('')}
+
+      ${openCount ? `
+        <div style="margin-top:14px;display:flex;gap:10px">
+          ${counts.ACTIVE ? `<div style="flex:1;background:#e6f7ff;border:1px solid #91d5ff;border-radius:12px;padding:10px 12px">
+            <div style="font-size:20px;font-weight:800;color:#0050b3">${counts.ACTIVE}</div>
+            <div style="font-size:11px;color:#0050b3;font-weight:600">Running now</div>
+          </div>` : ''}
+          ${counts.PENDING_REVIEW ? `<div style="flex:1;background:#fff7e6;border:1px solid #ffd591;border-radius:12px;padding:10px 12px">
+            <div style="font-size:20px;font-weight:800;color:#ad4e00">${counts.PENDING_REVIEW}</div>
+            <div style="font-size:11px;color:#ad4e00;font-weight:600">Waiting for review</div>
+          </div>` : ''}
+        </div>
+      ` : ''}
+
+      <div style="margin-top:14px;display:flex;gap:8px;overflow:auto;padding-bottom:8px">
+        ${CHIPS.map(c=>`<button class="chip filter-btn" data-status="${c.key}" style="min-height:36px;padding:0 14px;border-radius:20px;font-size:13px;white-space:nowrap;border:1.5px solid var(--border);background:white;font-weight:600">${c.label}${c.count?` <span style="opacity:0.6">${c.count}</span>`:''}</button>`).join('')}
       </div>
-      <div class="list" id="shiftList" style="margin-top:16px">${renderShiftList(shifts)}</div>
+
+      <div class="list" id="shiftList" style="margin-top:8px"></div>
     </div>
   `;
+
   function renderShiftList(list) {
-    const { user } = getState();
     const isOwner = user.role === 'owner';
-    if (!list.length) return `<div class="neu-card empty" style="padding:24px;text-align:center"><p>No shifts</p></div>`;
-    return list.map(sh=>{
+    if (!list.length) {
+      const msg = current==='OPEN'
+        ? 'Nothing open right now. Every shift has been reviewed.'
+        : 'No shifts here yet.';
+      return `<div class="neu-card empty" style="padding:28px 20px;text-align:center"><div style="font-size:28px">✅</div><p style="margin-top:8px;font-size:13px;color:var(--text-secondary)">${msg}</p>${current!=='ALL'?`<button id="seeAll" class="neu-btn" style="margin-top:14px;min-height:40px;padding:0 16px;border-radius:10px;font-weight:600">See all shifts</button>`:''}</div>`;
+    }
+    const capped = (!showingAll && list.length > RECENT_LIMIT) ? list.slice(0, RECENT_LIMIT) : list;
+    const rows = capped.map(sh=>{
+      const meta = STATUS_META[sh.status] || { label: sh.status, badge:'badge--info', dot:'#8c8c8c' };
       const v = sh.totals?.variance||0;
       const absV = Math.abs(v);
       let varText = '';
@@ -43,27 +113,49 @@ export async function shiftsListView({ root }) {
           else varText = `↩️ Excess ${formatCurrency(absV)} to ${sh.employeeName.split(' ')[0]}`;
         }
       }
+      const start = new Date(sh.startTime);
+      const when = `${formatBusinessDate(start, { year: undefined })} • ${formatBusinessTime(start)}`;
+      const until = sh.endTime ? formatBusinessTime(sh.endTime) : null;
       return `
-      <div class="neu-card" style="cursor:pointer;padding:16px;border-radius:14px" onclick="location.hash='#/shifts/${sh.id}'">
+      <div class="neu-card" style="cursor:pointer;padding:14px 16px;border-radius:14px;border-left:4px solid ${meta.dot}" onclick="location.hash='#/shifts/${sh.id}'">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sh.employeeName} • ${new Date(sh.startTime).toLocaleDateString()} ${new Date(sh.startTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} → ${sh.endTime? new Date(sh.endTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'Active'}</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">${sh.nozzles?.length||0} nozzles • ${isOwner || sh.userId===user.uid ? formatCurrency(sh.totals?.totalRevenue||0)+' • ' : ''}${formatLiters(sh.totals?.totalLiters||0)}</div>
+            <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sh.employeeName}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:3px">${when}${until?` → ${until}`:''}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:5px">${sh.nozzles?.length||0} nozzles • ${isOwner || sh.userId===user.uid ? formatCurrency(sh.totals?.totalRevenue||0)+' • ' : ''}${formatLiters(sh.totals?.totalLiters||0)}</div>
             ${sh.correctionRequests?.length ? `<div style="font-size:11px;color:#fa541c;margin-top:6px;display:flex;align-items:center;gap:4px"><span style="background:#fff1f0;color:#cf1322;padding:2px 8px;border-radius:10px;font-size:10px">⚠️ ${sh.correctionRequests.length} correction</span></div>` : ''}
-            ${varText ? `<div style="font-size:11px;margin-top:6px;color:${Math.abs(v)>0.5 && v<0?'#cf1322':'#389e0d'};font-weight:600">${varText}</div>` : ''}
+            ${varText ? `<div style="font-size:11px;margin-top:6px;color:${v<0?'#cf1322':'#389e0d'};font-weight:600">${varText}</div>` : ''}
           </div>
-          <span class="badge ${sh.status==='ACTIVE'?'badge--info': sh.status==='PENDING_REVIEW'?'badge--warning': sh.status==='APPROVED'?'badge--success':'badge--danger'}" style="font-size:11px;padding:6px 10px;border-radius:20px;white-space:nowrap">${sh.status}</span>
+          <span class="badge ${meta.badge}" style="font-size:11px;padding:6px 10px;border-radius:20px;white-space:nowrap">${meta.label}</span>
         </div>
       </div>
     `}).join('');
+    const more = (!showingAll && list.length > RECENT_LIMIT)
+      ? `<button id="showMore" class="neu-btn" style="margin-top:12px;min-height:44px;border-radius:12px;font-weight:600;width:100%">Show ${list.length - RECENT_LIMIT} older shift(s)</button>`
+      : '';
+    return rows + more;
   }
+
+  function paint() {
+    root.querySelectorAll('.filter-btn').forEach(b=>{
+      const on = b.dataset.status === current;
+      b.style.background = on ? 'var(--primary, #ff5a1f)' : 'white';
+      b.style.color = on ? 'white' : 'var(--text-primary, #222)';
+      b.style.borderColor = on ? 'var(--primary, #ff5a1f)' : 'var(--border)';
+    });
+    root.querySelector('#shiftList').innerHTML = renderShiftList(applyFilter(current));
+    root.querySelector('#showMore')?.addEventListener('click', ()=>{ showingAll = true; paint(); });
+    root.querySelector('#seeAll')?.addEventListener('click', ()=>{ current='ALL'; showingAll=true; paint(); });
+  }
+
   root.querySelectorAll('.filter-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const status = btn.dataset.status;
-      const filtered = status==='ALL'? shifts : shifts.filter(s=>s.status===status);
-      root.querySelector('#shiftList').innerHTML = renderShiftList(filtered);
+      current = btn.dataset.status;
+      showingAll = false;
+      paint();
     });
   });
+  paint();
 }
 
 export async function startShiftView({ root }) {

@@ -112,3 +112,24 @@ export function formatBusinessDateTime(value) {
   if (isNaN(d.getTime())) return '—';
   return `${formatBusinessDate(d)}, ${formatBusinessTime(d)}`;
 }
+
+/**
+ * Short "how long ago" label, e.g. "just now", "12 min ago", "3 hr ago",
+ * "yesterday", "5 days ago". Used to show how fresh a price is.
+ * Future timestamps read as "just now" rather than a negative age.
+ */
+export function formatRelativeTime(value) {
+  const d = toDate(value);
+  if (isNaN(d.getTime())) return '—';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} mo ago`;
+  return `${Math.floor(months / 12)} yr ago`;
+}
