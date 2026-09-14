@@ -44,7 +44,7 @@ export async function collectionsView({ root }) {
           <div>
             <div style="font-size:11px;opacity:0.7;letter-spacing:0.5px;text-transform:uppercase">To Collect from Staff</div>
             <div style="font-weight:800;font-size:28px;margin-top:4px">${fmt(totals.totalPendingCollect)}</div>
-            <div style="font-size:11px;opacity:0.6;margin-top:4px">${pendingList.length} staff • ${data.allShifts.filter(s=>{ const v=s.totals?.variance||0; const c=s.settlement?.collectedAmount||0; return v<-0.5 && (Math.abs(v)-c)>0.5; }).length} shifts pending</div>
+            <div style="font-size:11px;opacity:0.6;margin-top:4px">${pendingList.length} staff • ${staffList.reduce((a,st)=>a+st.shifts.filter(sh=>sh.pendingCollect>0.5).length,0)} shifts pending</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:11px;opacity:0.7">To Return to Staff</div>

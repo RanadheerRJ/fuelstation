@@ -1,5 +1,6 @@
 import { listDocs, addDocTo, updateDocById, queryDocs, getDocById } from './firestoreService.js';
 import { getState } from '../state.js';
+import { computeShiftFinancials, getExpensesByShift } from './settlement.js';
 
 // Collection name: settlements (to avoid confusion)
 const COLL = 'settlements';
@@ -34,6 +35,7 @@ export async function getStaffBalances(stationId) {
   const { queryDocs: q } = await import('./firestoreService.js');
   const allShifts = await q('shifts', s => s.stationId === stationId && s.status === 'APPROVED');
   const settlements = await getSettlements(stationId);
+  const expenseByShift = await getExpensesByShift(stationId);
 
   // Group shifts by staff
   const staffMap = {};
@@ -53,15 +55,14 @@ export async function getStaffBalances(stationId) {
         pendingReturn: 0,
       };
     }
-    const variance = shift.totals?.variance || 0;
-    const toCollect = variance < -0.5 ? Math.abs(variance) : 0;
-    const toReturn = variance > 0.5 ? variance : 0;
-    const collectedAmt = shift.settlement?.collectedAmount || 0;
-    const returnedAmt = shift.settlement?.returnedAmount || 0;
+    const fin = computeShiftFinancials(shift, expenseByShift[shift.id] || 0);
+    const { toCollect, toReturn } = fin;
+    const collectedAmt = fin.collected;
+    const returnedAmt = fin.returned;
 
     // If settlement field exists, use it, else calculate from settlements history as fallback
-    let pendingCollect = Math.max(0, toCollect - collectedAmt);
-    let pendingReturn = Math.max(0, toReturn - returnedAmt);
+    let pendingCollect = fin.pendingCollect;
+    let pendingReturn = fin.pendingReturn;
 
     // Fallback: if no settlement field but settlements exist for this shift
     if (!shift.settlement) {
@@ -74,6 +75,7 @@ export async function getStaffBalances(stationId) {
 
     staffMap[uid].shifts.push({
       ...shift,
+      fin,
       toCollect,
       toReturn,
       collectedAmt,
@@ -134,12 +136,13 @@ export async function collectFromShift(shiftId, amount, notes, type='collect') {
   const shift = await getDocById('shifts', shiftId);
   if (!shift) throw new Error('Shift not found');
   const { user } = getState();
-  const variance = shift.totals?.variance || 0;
-  const toCollect = variance < -0.5 ? Math.abs(variance) : 0;
-  const toReturn = variance > 0.5 ? variance : 0;
+  const expenseByShift = await getExpensesByShift(shift.stationId);
+  const fin = computeShiftFinancials(shift, expenseByShift[shift.id] || 0);
+  const toCollect = fin.toCollect;
+  const toReturn = fin.toReturn;
 
-  const currentCollected = shift.settlement?.collectedAmount || 0;
-  const currentReturned = shift.settlement?.returnedAmount || 0;
+  const currentCollected = fin.collected;
+  const currentReturned = fin.returned;
 
   let patch = {};
   if (type === 'collect') {
@@ -202,15 +205,12 @@ export async function collectBulk(stationId, staffUserId, staffName, shiftIds, t
 
   let remaining = Number(totalAmount);
   const results = [];
+  const expenseByShift = await getExpensesByShift(stationId);
 
   for (const shift of shifts) {
     if (remaining <= 0.01) break;
-    const variance = shift.totals?.variance || 0;
-    const toCollect = variance < -0.5 ? Math.abs(variance) : 0;
-    const toReturn = variance > 0.5 ? variance : 0;
-    const target = type==='collect' ? toCollect : toReturn;
-    const already = type==='collect' ? (shift.settlement?.collectedAmount||0) : (shift.settlement?.returnedAmount||0);
-    const pending = Math.max(0, target - already);
+    const fin = computeShiftFinancials(shift, expenseByShift[shift.id] || 0);
+    const pending = type==='collect' ? fin.pendingCollect : fin.pendingReturn;
     if (pending <= 0.01) continue;
     const take = Math.min(pending, remaining);
     const res = await collectFromShift(shift.id, take, notes, type);
