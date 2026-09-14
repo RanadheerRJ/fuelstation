@@ -1,5 +1,5 @@
 import { getState, setState } from '../state.js';
-import { getBusinessDate } from '../services/datetime.js';
+import { getBusinessDate, formatBusinessDate, formatBusinessTime } from '../services/datetime.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
 import { formatCurrency, formatLiters } from '../services/calc.js';
@@ -168,23 +168,10 @@ export async function dashboardView({ root }) {
   const freePumps = pumps.filter(p=>!pumpOccupancy[p.id]?.occupied).length;
   const busyPumps = pumps.length - freePumps;
 
-  // Top performers today
-  const perfByEmp = {};
-  todayShiftsAll.forEach(s=>{
-    const gross = s.totals?.totalRevenue||0;
-    const exp = expenseMap[s.id]||0;
-    const net = gross - exp;
-    if (!perfByEmp[s.userId]) perfByEmp[s.userId] = { name:s.employeeName, userId:s.userId, liters:0, net:0, shifts:0 };
-    perfByEmp[s.userId].liters += s.totals?.totalLiters||0;
-    perfByEmp[s.userId].net += net;
-    perfByEmp[s.userId].shifts += 1;
-  });
-  const topPerformers = Object.values(perfByEmp).sort((a,b)=>b.liters-a.liters).slice(0,4);
-
-  // Retained (currently unrendered): the owner-view "To Receive" and gross
-  // figures were removed from the dashboard and will be reintroduced one at a
-  // time. Keeping the computation avoids re-deriving it when they come back.
-  const toHandoverToday = todayShiftsAll.reduce((a,s)=>{ const gross=s.totals?.totalRevenue||0; const exp=expenseMap[s.id]||0; const net=gross-exp; const pay=s.totals?.totalPayments||0; return a + Math.max(0, net-pay); },0);
+  // Removed from the owner dashboard (kept as one-line derivations so the
+  // blocks can be reinstated one at a time, per the staged cleanup):
+  //   - per-employee performance ranking  (perfByEmp / topPerformers)
+  //   - "To Receive from staff" total     (toHandoverToday)
 
   if (isAttendant) {
     root.innerHTML = `
@@ -333,212 +320,104 @@ export async function dashboardView({ root }) {
   // Owner / Manager Banking Elegant Dashboard
   root.innerHTML = `
     <div class="container" style="max-width:520px;margin:0 auto;padding-bottom:110px">
-      <!-- Header Banking -->
+      <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
         <div>
-          <div style="font-size:11px;color:var(--text-secondary);letter-spacing:0.8px;text-transform:uppercase">${getGreeting().toUpperCase()} • ${new Date().toLocaleDateString('en-IN',{weekday:'short', day:'2-digit', month:'short'})}</div>
+          <div style="font-size:11px;color:var(--text-secondary);letter-spacing:0.8px;text-transform:uppercase">${getGreeting().toUpperCase()} • ${formatBusinessDate(new Date())}</div>
           <h1 style="font-size:24px;font-weight:800;letter-spacing:-0.6px;margin-top:2px">${user.name?.split(' ')[0] || 'Owner'} 👋</h1>
-          <p style="font-size:12px;color:var(--text-secondary);margin-top:2px">⛽ ${activeStation.name} • ${isOwner ? 'OWNER • All Access' : user.role.toUpperCase()}</p>
+          <p style="font-size:12px;color:var(--text-secondary);margin-top:2px">⛽ ${activeStation.name}</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          ${stations.length>1 ? `<select id="stationSwitch" style="min-height:40px;border-radius:12px;border:1.5px solid var(--border);padding:0 10px;font-size:12px;font-weight:600;background:white;max-width:110px"><option>${activeStation.name.slice(0,12)}</option>${stations.map(s=>`<option value="${s.id}" ${s.id===activeStation.id?'selected':''}>${s.name}</option>`).join('')}</select>` : ''}
+          ${stations.length>1 ? `<select id="stationSwitch" style="min-height:40px;border-radius:12px;border:1.5px solid var(--border);padding:0 10px;font-size:12px;font-weight:600;background:white;max-width:110px">${stations.map(s=>`<option value="${s.id}" ${s.id===activeStation.id?'selected':''}>${s.name}</option>`).join('')}</select>` : ''}
           <button style="width:40px;height:40px;border-radius:12px;border:1.5px solid var(--border);background:white;display:grid;place-items:center;font-size:16px" onclick="location.hash='#/settings'">⚙️</button>
         </div>
       </div>
 
-      <!-- Hero Banking - Whole view of pump -->
-      <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden">
+      <!-- 1. HERO • Litres sold today -->
+      <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:22px;color:white;margin-top:16px;position:relative;overflow:hidden">
         <div style="position:absolute;top:-40px;right:-40px;width:160px;height:160px;background:rgba(255,90,31,0.10);border-radius:50%"></div>
-        <div style="position:absolute;bottom:-30px;left:-30px;width:120px;height:120px;background:rgba(82,196,26,0.07);border-radius:50%"></div>
         <div style="position:relative;z-index:1">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">TODAY'S NET SALES • WHOLE AMOUNT TO OWNER</div>
-              <div style="font-size:30px;font-weight:800;margin-top:6px;letter-spacing:-1px">${formatCurrency(totalSalesAll)}</div>
+          <div style="font-size:10px;opacity:0.6;letter-spacing:1px">LITRES SOLD • TODAY</div>
+          <div style="font-size:38px;font-weight:800;margin-top:4px;letter-spacing:-1.5px">${formatLiters(totalLitersAll).replace(' L','')}<span style="font-size:18px;opacity:0.5;font-weight:600"> L</span></div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.1)">
+              <div style="font-size:10px;opacity:0.6;letter-spacing:0.5px">PETROL • MS</div>
+              <div style="font-size:20px;font-weight:800;margin-top:2px">${formatLiters(msLitersAll).replace(' L','')}<span style="font-size:11px;opacity:0.5;font-weight:600"> L</span></div>
             </div>
-            <div style="text-align:right">
-              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD • TODAY</div>
-              <div style="margin-top:6px;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px 10px;border:1px solid rgba(255,255,255,0.12);min-width:140px">
-                <div style="display:flex;justify-content:space-between;gap:12px">
-                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">MS</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(msLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Petrol</div></div>
-                  <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
-                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">HSD</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(hsdLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Diesel</div></div>
-                </div>
-                <div style="font-size:9px;opacity:0.5;margin-top:6px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px">Total ${formatLiters(totalLitersAll)} • ${todayShiftsAll.length} shifts</div>
-              </div>
+            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.1)">
+              <div style="font-size:10px;opacity:0.6;letter-spacing:0.5px">DIESEL • HSD</div>
+              <div style="font-size:20px;font-weight:800;margin-top:2px">${formatLiters(hsdLitersAll).replace(' L','')}<span style="font-size:11px;opacity:0.5;font-weight:600"> L</span></div>
             </div>
           </div>
 
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px">
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:10px;opacity:0.6">PAYMENTS</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px">${formatCurrency(totalPaymentsAll)}</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">UPI/Cash/Card</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:10px;opacity:0.6">ACTIVE</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px;color:#95de64">${activeShifts.length} live</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">${pendingShifts.length} pending</div>
-            </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;font-size:11px;opacity:0.65">
+            <span>${todayShiftsAll.length} shift${todayShiftsAll.length===1?'':'s'} today</span>
+            <span>${activeShifts.length} running now</span>
           </div>
         </div>
       </div>
 
-      <!-- Pump Overview Banking Elegant -->
+      <!-- 2. PUMPS • live status -->
       <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:13px;font-weight:800">⛽ Pumps Overview • Live Status</span>
-          <span style="font-size:11px;background:#f6ffed;color:#389e0d;padding:4px 10px;border-radius:20px;font-weight:600;border:1px solid #b7eb8f">${freePumps} free • ${busyPumps} busy • ${pumps.length} total</span>
+          <span style="font-size:13px;font-weight:800">⛽ Pumps • Live</span>
+          <span style="font-size:11px;background:#f6ffed;color:#389e0d;padding:4px 10px;border-radius:20px;font-weight:600;border:1px solid #b7eb8f">${freePumps} free • ${busyPumps} busy</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px">
           ${pumps.map(p=>{
-            const occ = pumpOccupancy[p.id];
-            const isFree = !occ?.occupied;
-            const pNoz = nozzles.filter(n=>n.pumpId===p.id);
-            return `<div style="padding:10px;border-radius:12px;background:${isFree?'#f6ffed':'#fff1f0'};border:1.5px solid ${isFree?'#b7eb8f':'#ffa39e'};text-align:center;cursor:pointer;position:relative;overflow:hidden" onclick="location.hash='#/pumps'">
-              ${!isFree ? `<div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#ff4d4f,#ffa39e,#ff4d4f);background-size:200% 100%;animation:shimmer 1.5s linear infinite"></div>` : ''}
-              <div style="font-size:18px">${isFree?'🟢':'🔴'}</div>
-              <div style="font-weight:700;font-size:11px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-              <div style="font-size:8px;color:var(--text-secondary);margin-top:2px">${pNoz.length} noz • ${pNoz.map(n=>n.fuelType[0]).join('')}</div>
-              ${!isFree ? `<div style="font-size:8px;color:#cf1322;margin-top:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${occ.employeeName?.split(' ')[0]||'Busy'}</div>` : `<div style="font-size:8px;color:#389e0d;margin-top:3px">Free</div>`}
+            const busy = activeShifts.some(s=>(s.nozzles||[]).some(n=>n.pumpId===p.id));
+            const who = busy ? activeShifts.find(s=>(s.nozzles||[]).some(n=>n.pumpId===p.id))?.employeeName : null;
+            return `<div style="background:${busy?'#fff7e6':'#f6ffed'};border:1px solid ${busy?'#ffd591':'#b7eb8f'};border-radius:12px;padding:10px 6px;text-align:center">
+              <div style="font-size:18px">${busy?'🔴':'🟢'}</div>
+              <div style="font-weight:700;font-size:11px;margin-top:2px">${p.name||('P'+p.number)}</div>
+              <div style="font-size:9px;color:var(--text-secondary);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${busy? (who||'Busy').split(' ')[0] : 'Free'}</div>
             </div>`;
-          }).join('') || `<div style="grid-column:span 4;text-align:center;padding:16px;color:var(--text-secondary);font-size:12px">No pumps configured • Create in Pumps page</div>`}
-        </div>
-        <div style="margin-top:10px;padding:8px;background:#f8f9fa;border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--text-secondary)">
-          <span>🟢 Free — tap to start shift</span>
-          <span>🔴 Busy — ${busyPumps} fueling now</span>
-          <button style="font-size:10px;background:white;border:1px solid var(--border);padding:4px 8px;border-radius:12px;font-weight:600" onclick="location.hash='#/pumps'">View all →</button>
+          }).join('') || `<div style="grid-column:1/-1;text-align:center;padding:12px;font-size:11px;color:var(--text-secondary)">No pumps configured</div>`}
         </div>
       </div>
 
-      <!-- Team Today - Who is doing what - Live Integration -->
-      <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:13px;font-weight:800">👥 Team Today • Who is doing what</span>
-          <span style="font-size:10px;background:#f6ffed;color:#389e0d;padding:4px 8px;border-radius:12px;border:1px solid #b7eb8f">${todayShiftsAll.length} shifts • Live</span>
-        </div>
-        ${activeShifts.length>0 ? `
-          <div style="margin-top:12px">
-            <div style="font-size:11px;font-weight:700;color:#1677ff;letter-spacing:0.5px;margin-bottom:8px">🔴 LIVE NOW • ${activeShifts.length} working</div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              ${activeShifts.map(sh=>{
-                const pumpNames = (sh.nozzles||[]).map(n=>{
-                  const p = pumps.find(pp=>pp.id===n.pumpId);
-                  return p ? p.name : 'Pump';
-                }).join(', ');
-                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#e6f4ff;border-radius:10px;border:1px solid #91caff">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <div style="width:8px;height:8px;background:#ff4d4f;border-radius:50%;animation:pulse 1s infinite"></div>
-                    <div style="width:32px;height:32px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:11px">${(sh.employeeName||'?')[0]}</div>
-                    <div><div style="font-weight:700;font-size:12px">${sh.employeeName}</div><div style="font-size:10px;color:var(--text-secondary)">On ${pumpNames} • ${sh.nozzles?.length||0} nozzles • Started ${new Date(sh.startTime).toLocaleTimeString()}</div></div>
-                  </div>
-                  <button style="min-height:32px;padding:0 10px;border-radius:8px;background:#1677ff;color:white;border:none;font-size:11px;font-weight:600" onclick="location.hash='#/shifts/${sh.id}'">View</button>
-                </div>`;
-              }).join('')}
-            </div>
-          </div>
-        ` : `<div style="margin-top:12px;padding:10px;background:#f8f9fa;border-radius:10px;text-align:center;font-size:11px;color:var(--text-secondary)">No one working now • All pumps free</div>`}
-
-        <div style="margin-top:16px">
-          <div style="font-size:11px;font-weight:700;color:var(--text-secondary);letter-spacing:0.5px;margin-bottom:8px">📊 TODAY'S PERFORMANCE • BY EMPLOYEE</div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            ${Object.values(perfByEmp).sort((a,b)=>b.liters-a.liters).slice(0,5).map((emp, idx)=>{
-              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${idx===0?'#fff7e6':'#f8f9fa'};border-radius:10px;border:1px solid ${idx===0?'#ffd591':'transparent'}">
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="width:24px;height:24px;border-radius:50%;background:${idx===0?'#ff5a1f':'#1a2535'};color:white;display:grid;place-items:center;font-weight:800;font-size:10px">${idx+1}</div>
-                  <div><div style="font-weight:700;font-size:12px">${emp.name} ${idx===0?'👑':''}</div><div style="font-size:10px;color:var(--text-secondary)">${emp.shifts} shifts • ${formatLiters(emp.liters)} • MS/HSD</div></div>
-                </div>
-                <div style="text-align:right"><div style="font-weight:700;font-size:12px">${formatCurrency(emp.net)}</div></div>
-              </div>`;
-            }).join('') || `<div style="text-align:center;padding:12px;color:var(--text-secondary);font-size:11px">No shifts today</div>`}
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Quick Stats Banking -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
-        <div style="background:white;border-radius:14px;padding:14px;border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--text-secondary);letter-spacing:0.5px">TODAY'S SHIFTS</span><span style="font-size:16px">🧾</span></div>
-          <div style="font-weight:800;font-size:20px;margin-top:6px">${todayShiftsAll.length}</div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${approvedToday} approved • ${pendingShifts.length} pending • ${activeShifts.length} active</div>
-          <div style="margin-top:8px;height:4px;background:#f0f0f0;border-radius:2px;overflow:hidden"><div style="height:100%;width:${todayShiftsAll.length? (approvedToday/todayShiftsAll.length*100):0}%;background:#52c41a;border-radius:2px"></div></div>
-        </div>
-        <div style="background:white;border-radius:14px;padding:14px;border:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10px;color:var(--text-secondary);letter-spacing:0.5px">TEAM</span><span style="font-size:16px">👥</span></div>
-          <div style="font-weight:800;font-size:20px;margin-top:6px">${employees.length}</div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${employees.filter(e=>e.role==='attendant').length} attendants • ${employees.filter(e=>['manager','admin'].includes(e.role)).length} managers</div>
-          <div style="margin-top:8px;display:flex;gap:4px">${employees.slice(0,5).map(e=>`<div style="width:20px;height:20px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-size:9px;font-weight:700;border:2px solid white;margin-left:-6px">${(e.name||'?')[0]}</div>`).join('')}${employees.length>5?`<div style="width:20px;height:20px;border-radius:50%;background:#f0f0f0;display:grid;place-items:center;font-size:8px;font-weight:700;border:2px solid white;margin-left:-6px">+${employees.length-5}</div>`:''}</div>
-        </div>
-        <div style="background:white;border-radius:14px;padding:14px;border:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text-secondary);letter-spacing:0.5px">BY FUEL TODAY</div>
-          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-            ${Object.entries(fuelAgg).slice(0,3).map(([ft,v])=>`<div style="display:flex;justify-content:space-between;font-size:11px"><span style="font-weight:600">${ft}</span><span>${formatLiters(v.liters)}</span></div>`).join('') || `<span style="font-size:11px;color:var(--text-tertiary)">No fuel data today</span>`}
-          </div>
-        </div>
-      </div>
-
-      <!-- My Active Shift if owner also works -->
-      ${myActiveShift ? `
-        <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1.5px solid #91caff">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#0958d9">MY ACTIVE SHIFT • LIVE</span>
-            <span style="font-size:10px;background:#e6f4ff;color:#0958d9;padding:4px 8px;border-radius:12px">${myActiveShift.nozzles?.length||0} nozzles</span>
-          </div>
-          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
-            <div><div style="font-weight:800">${myActiveShift.employeeName} • ${new Date(myActiveShift.startTime).toLocaleTimeString()}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${myActiveShift.nozzles?.length||0} pumps • You are on duty</div></div>
-            <button style="min-height:40px;padding:0 16px;border-radius:10px;background:#1677ff;color:white;border:none;font-weight:700" onclick="location.hash='#/shifts/${myActiveShift.id}'">Open →</button>
-          </div>
-        </div>
-      ` : ''}
-
-      <!-- Pending Review Banking -->
+      <!-- 3. NEEDS ATTENTION • pending review -->
       ${pendingShifts.length>0 ? `
         <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid #ffe58f">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:13px;font-weight:800">⏳ Pending Review • ${pendingShifts.length}</span>
-            <span style="font-size:10px;background:#fffbe6;color:#ad6800;padding:4px 8px;border-radius:12px;border:1px solid #ffe58f">${pendingShifts.length} need approval</span>
+            <span style="font-size:13px;font-weight:800">⏳ Needs Review • ${pendingShifts.length}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-            ${pendingShifts.slice(0,3).map(s=>{
-              const gross = s.totals?.totalRevenue||0;
-              const exp = expenseMap[s.id]||0;
-              const net = gross - exp;
-              return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#fffbe6;border-radius:12px;border:1px solid #ffe58f">
+            ${pendingShifts.slice(0,3).map(s=>`
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:#fffbe6;border-radius:12px;border:1px solid #ffe58f">
                 <div style="display:flex;align-items:center;gap:10px">
                   <div style="width:36px;height:36px;border-radius:50%;background:#1a2535;color:white;display:grid;place-items:center;font-weight:700;font-size:12px">${(s.employeeName||'?')[0]}</div>
-                  <div><div style="font-weight:700;font-size:13px">${s.employeeName}</div><div style="font-size:11px;color:var(--text-secondary)">${formatCurrency(net)} net • ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>
+                  <div>
+                    <div style="font-weight:700;font-size:13px">${s.employeeName}</div>
+                    <div style="font-size:11px;color:var(--text-secondary)">${formatLiters(s.totals?.totalLiters||0)} • ${formatBusinessTime(s.startTime)}</div>
+                  </div>
                 </div>
                 <button style="min-height:36px;padding:0 14px;border-radius:10px;background:#1a2535;color:white;border:none;font-weight:700;font-size:12px" onclick="location.hash='#/shifts/${s.id}'">Review →</button>
-              </div>`;
-            }).join('')}
+              </div>`).join('')}
           </div>
-          ${pendingShifts.length>3 ? `<div style="text-align:center;margin-top:10px"><button style="font-size:11px;background:var(--bg);border:1px solid var(--border);padding:6px 14px;border-radius:20px;font-weight:600" onclick="location.hash='#/shifts'">View all ${pendingShifts.length} pending →</button></div>` : ''}
+          ${pendingShifts.length>3 ? `<div style="text-align:center;margin-top:10px"><button style="font-size:11px;background:var(--bg);border:1px solid var(--border);padding:6px 14px;border-radius:20px;font-weight:600" onclick="location.hash='#/shifts'">View all ${pendingShifts.length} →</button></div>` : ''}
         </div>
       ` : `
         <div style="background:white;border-radius:16px;padding:16px;margin-top:14px;border:1px solid var(--border);text-align:center">
-          <div style="font-size:24px">✅</div>
+          <div style="font-size:22px">✅</div>
           <div style="font-weight:700;font-size:13px;margin-top:6px">All shifts reviewed</div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">No pending approvals • All clear</div>
         </div>
       `}
 
-      <!-- Quick Actions Banking -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px">
-        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/pumps'"><span style="font-size:22px">⛽</span>Pumps • ${pumps.length}</button>
-        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/shifts'"><span style="font-size:22px">🧾</span>Shifts • ${allShifts.length}</button>
-        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/reports'"><span style="font-size:22px">📊</span>Reports</button>
-        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/employees'"><span style="font-size:22px">👥</span>Team • ${employees.length}</button>
-        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/prices'"><span style="font-size:22px">💰</span>Prices</button>
-        <button style="min-height:64px;border-radius:14px;background:#1a2535;color:white;border:none;font-weight:700;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/shifts/start'"><span style="font-size:22px">▶️</span>Start Shift</button>
-      </div>
-
-      <div style="margin-top:14px;padding:12px;background:#f6ffed;border-radius:12px;border:1px solid #b7eb8f;text-align:center">
-        <div style="font-size:11px;color:#389e0d;font-weight:600">✅ Banking Dashboard • Simple • Elegant • No jackpot</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Net sales • Pumps live status • Employee performance by liters</div>
-      </div>
+      ${myActiveShift ? `
+        <div style="background:white;border-radius:16px;padding:14px;margin-top:14px;border:1.5px solid #91caff;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#0958d9">MY ACTIVE SHIFT</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">Started ${formatBusinessTime(myActiveShift.startTime)}</div>
+          </div>
+          <button style="min-height:40px;padding:0 16px;border-radius:10px;background:#1677ff;color:white;border:none;font-weight:700" onclick="location.hash='#/shifts/${myActiveShift.id}'">Open →</button>
+        </div>
+      ` : `
+        <button style="width:100%;min-height:52px;border-radius:14px;background:#1a2535;color:white;border:none;font-weight:700;font-size:14px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="location.hash='#/shifts/start'"><span style="font-size:18px">▶️</span>Start Shift</button>
+      `}
     </div>
-    <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style>
+    <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}</style>
   `;
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });

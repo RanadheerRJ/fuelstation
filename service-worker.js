@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v44-dashboard-simplify-20260914';
+const CACHE_NAME = 'fuelops-v45-owner-dashboard-clean-20260914';
 const APP_SHELL = [
   './',
   './index.html',
