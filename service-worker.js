@@ -1,5 +1,5 @@
 // FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v34-no-collect-money-simple-handover-20260913';
+const CACHE_NAME = 'fuelops-v35-remove-family-tree-delete-pump-graceful-20260913';
 const APP_SHELL = [
   './',
   './index.html',

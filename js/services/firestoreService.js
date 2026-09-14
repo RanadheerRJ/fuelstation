@@ -67,6 +67,17 @@ export async function updateDocById(collectionName, id, patch) {
   return { id, ...patch };
 }
 
+export async function deleteDocById(collectionName, id) {
+  if (getIsDemo()) {
+    return demo.demoDelete(collectionName, id);
+  }
+  const mod = await loadFirestoreModule();
+  const db = getDbInstance();
+  const ref = mod.doc(db, collectionName, id);
+  await mod.deleteDoc(ref);
+  return true;
+}
+
 export async function queryDocs(collectionName, predicate) {
   if (getIsDemo()) {
     return demo.demoQuery(collectionName, predicate);

@@ -1,5 +1,5 @@
 import { getState } from '../state.js';
-import { getPumps, getNozzles, createPump, createNozzle, updatePump, updateNozzle } from '../services/pumps.js';
+import { getPumps, getNozzles, createPump, createNozzle, updatePump, updateNozzle, deletePump, deleteNozzle } from '../services/pumps.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts } from '../services/shifts.js';
 
@@ -282,16 +282,20 @@ export async function pumpsView({ root }) {
               <div style="display:flex;flex-direction:column;gap:8px">
                 ${pNozzles.map(n=>{
                   const fuelColor = n.fuelType==='Petrol' ? '#1677ff' : n.fuelType==='Diesel' ? '#fa8c16' : n.fuelType==='CNG' ? '#52c41a' : '#722ed1';
+                  const nozzleOccupied = activeShifts.some(sh => (sh.nozzles||[]).some(nn => nn.nozzleId === n.id));
                   return `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);border-radius:10px;border:0.5px solid var(--border)">
-                      <div style="display:flex;align-items:center;gap:8px">
+                      <div style="display:flex;align-items:center;gap:8px;flex:1">
                         <span style="width:12px;height:12px;border-radius:50%;background:${fuelColor};display:inline-block"></span>
-                        <div>
-                          <div style="font-weight:600;font-size:13px">Nozzle ${n.number} • ${n.fuelType}</div>
-                          ${!isAttendant ? `<div style="font-size:11px;color:var(--text-secondary)">Last: ${Number(n.lastReading||0).toFixed(2)}</div>` : `<div style="font-size:10px;color:var(--text-secondary)">Fuel type only — no readings for attendants</div>`}
+                        <div style="flex:1">
+                          <div style="font-weight:600;font-size:13px">Nozzle ${n.number} • ${n.fuelType} ${nozzleOccupied ? '🔴 Busy' : '🟢 Free'}</div>
+                          ${!isAttendant ? `<div style="font-size:11px;color:var(--text-secondary)">Last: ${Number(n.lastReading||0).toFixed(2)} ${nozzleOccupied ? '• In active shift' : '• Free to delete'}</div>` : `<div style="font-size:10px;color:var(--text-secondary)">Fuel type only</div>`}
                         </div>
                       </div>
-                      <span class="badge ${n.status==='active'?'badge--success':'badge--neutral'}" style="font-size:10px">${n.status}</span>
+                      <div style="display:flex;align-items:center;gap:6px">
+                        <span class="badge ${n.status==='active'?'badge--success':'badge--neutral'}" style="font-size:10px">${n.status}</span>
+                        ${canManage ? (nozzleOccupied ? `<span style="font-size:10px;opacity:0.5">🔒</span>` : `<button class="neu-btn delete-nozzle-btn" data-nozzle="${n.id}" style="min-height:28px;min-width:28px;border-radius:50%;padding:0;font-size:12px;background:#fff1f0;border:1px solid #ffa39e;color:#cf1322">🗑️</button>`) : ''}
+                      </div>
                     </div>
                   `;
                 }).join('') || `<p style="font-size:12px;color:var(--text-secondary)">No nozzles</p>`}
@@ -307,6 +311,9 @@ export async function pumpsView({ root }) {
               <div style="display:flex;gap:8px">
                 <button id="editPump" class="neu-btn neu-btn--small" style="flex:1">Edit Pump</button>
                 <button id="addNozzleHere" class="neu-btn neu-btn--small" style="flex:1">+ Nozzle</button>
+              </div>
+              <div style="margin-top:10px">
+                ${isFree ? `<button id="deletePump" class="neu-btn neu-btn--small" style="width:100%;background:#fff1f0;color:#cf1322;border:1px solid #ffa39e">🗑️ Delete Pump (Free - Safe to Delete)</button>` : `<button class="neu-btn neu-btn--small" style="width:100%;opacity:0.5" disabled>🔒 Cannot Delete - Busy (${occ.employeeName} working)</button><div style="font-size:10px;color:var(--text-tertiary);text-align:center;margin-top:4px">Wait until ${occ.employeeName}'s shift ends, then delete</div>`}
               </div>
             ` : ''}
           </div>
@@ -326,6 +333,32 @@ export async function pumpsView({ root }) {
     modalRoot.querySelector('#addNozzleHere')?.addEventListener('click', ()=>{
       modalRoot.innerHTML='';
       openNozzleModal(null, pump.id);
+    });
+    modalRoot.querySelector('#deletePump')?.addEventListener('click', async ()=>{
+      if (!confirm(`Delete pump "${pump.name}"?\n\nThis will also delete its ${pNozzles.length} nozzle(s) if any.\n\nConditions:\n• Pump must be free (no active shift)\n• No one working on it now\n\nGraceful delete: Only if free, safe to delete. Continue?`)) return;
+      const second = prompt(`Type "${pump.name}" to confirm delete:`);
+      if (second !== pump.name) return alert('Name mismatch - cancelled');
+      try {
+        await deletePump(pump.id);
+        alert(`✅ Pump "${pump.name}" deleted gracefully`);
+        modalRoot.innerHTML='';
+        pumpsView({ root });
+      } catch(e){ alert('Cannot delete: ' + e.message); }
+    });
+    modalRoot.querySelectorAll('.delete-nozzle-btn').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const nozzleId = btn.dataset.nozzle;
+        const nz = pNozzles.find(n=>n.id===nozzleId);
+        if (!nz) return;
+        if (!confirm(`Delete Nozzle ${nz.number} • ${nz.fuelType} from ${pump.name}?\n\nConditions:\n• No active shift using it\n• Graceful: keeps past shift history, only removes nozzle from active list\n\nContinue?`)) return;
+        try {
+          await deleteNozzle(nozzleId);
+          alert(`✅ Nozzle ${nz.number} deleted`);
+          modalRoot.innerHTML='';
+          pumpsView({ root });
+        } catch(err){ alert('Cannot delete: ' + err.message); }
+      });
     });
   }
 

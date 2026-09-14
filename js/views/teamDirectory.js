@@ -58,9 +58,7 @@ export async function teamDirectoryView({ root, params }) {
         </div>
       </div>
 
-      <!-- Family Tree Visualization -->
       <div class="neu-card" style="margin-top:16px;padding:16px">
-        <h3 style="font-weight:700;display:flex;align-items:center;gap:8px">🌳 Family Tree — Hierarchy</h3>
         <p style="font-size:11px;color:var(--text-secondary);margin-top:4px">Phone directory • Who reports to whom • Contact directly</p>
         
         <div style="margin-top:18px;position:relative;padding-left:16px">
