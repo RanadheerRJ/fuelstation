@@ -20,7 +20,7 @@ export async function addCredit({ stationId, shiftId, customer, amount, referenc
   return doc;
 }
 
-export async function addExpense({ stationId, shiftId, category, amount, description }) {
+export async function addExpense({ stationId, shiftId, category, amount, description, fuelType, liters, nozzleId }) {
   const { user } = getState();
   const payload = {
     stationId,
@@ -31,6 +31,10 @@ export async function addExpense({ stationId, shiftId, category, amount, descrip
     description: description || category || '',
     createdBy: user?.uid,
     createdAt: new Date().toISOString(),
+    // Optional testing-liters fields - additive, undefined for old expense entries
+    ...(fuelType ? { fuelType } : {}),
+    ...(liters !== undefined && liters !== null && liters !== '' ? { liters: Number(liters) } : {}),
+    ...(nozzleId ? { nozzleId } : {}),
   };
   const doc = await addDocTo('transactions', payload);
   await logAudit({ userId: user?.uid, stationId, action: 'EXPENSE_ADDED', metadata: { category, amount } });

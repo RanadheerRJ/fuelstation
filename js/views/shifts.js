@@ -5,7 +5,7 @@ import { getPumps, getNozzles } from '../services/pumps.js';
 import { getActivePrices } from '../services/prices.js';
 import { getTransactions, addCredit, addExpense } from '../services/transactions.js';
 import { addNote, getNotes } from '../services/notes.js';
-import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue } from '../services/calc.js';
+import { formatCurrency, formatLiters, formatDateTime, calcLitersSold, calcRevenue, sumLitersByFuelGroup } from '../services/calc.js';
 // Collections removed - no jackpot
 
 export async function shiftsListView({ root }) {
@@ -210,14 +210,17 @@ export async function shiftDetailView({ root, params }) {
 
 
         <div class="neu-card" style="margin-top:16px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Credits (${credits.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${c.customer}</span><span style="font-weight:700">${formatCurrency(c.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No credits</p>`}</div></div>
-        <div class="neu-card" style="margin-top:12px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Expenses (${expenses.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${e.category}</span><span style="font-weight:700">${formatCurrency(e.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No expenses</p>`}</div></div>
+        <div class="neu-card" style="margin-top:12px;padding:16px;border-radius:14px"><h3 style="font-weight:700;font-size:14px">Expenses (${expenses.length})</h3><div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0"><span>${e.category}${(e.category||'').toLowerCase()==='testing' && e.liters ? ` (${Number(e.liters).toFixed(2)} L)` : ''}</span><span style="font-weight:700">${formatCurrency(e.amount)}</span></div>`).join('') || `<p style="font-size:12px;color:var(--text-secondary);padding:8px 0">No expenses</p>`}</div></div>
       </div>
       <div id="creditModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Credit</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('creditModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Customer</label><input id="cr_customer" class="neu-input" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount</label><input id="cr_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveCredit" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Credit</button></div></div></div>
-      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Maintenance</option><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Petty Cash</option><option>Other</option></select></div><div><label class="label">Amount</label><input id="ex_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
+      <div id="expenseModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Expense</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('expenseModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Category</label><select id="ex_cat" class="neu-select" style="min-height:44px;border-radius:10px"><option>Maintenance</option><option>Testing</option><option>Breakfast</option><option>Tea & Snacks</option><option>Cleaning</option><option>Petty Cash</option><option>Other</option></select></div><div id="ex_liters_wrap" style="display:none"><label class="label">Liters Used (Testing)</label><input id="ex_liters" class="neu-input" type="number" step="0.01" style="min-height:44px;border-radius:10px"></div><div><label class="label">Amount</label><input id="ex_amount" class="neu-input" type="number" style="min-height:44px;border-radius:10px"></div><button id="saveExpense" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Expense</button></div></div></div>
       <div id="noteModal" class="modal-backdrop" style="display:none"><div class="modal" style="border-radius:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-weight:700">Add Note</h3><button class="neu-btn neu-btn--small" style="min-height:36px;min-width:36px;border-radius:50%" onclick="document.getElementById('noteModal').style.display='none'">✕</button></div><div class="grid" style="margin-top:16px;gap:14px"><div><label class="label">Note</label><textarea id="note_text" class="neu-input" rows="3" style="border-radius:10px"></textarea></div><button id="saveNote" class="neu-btn neu-btn--primary neu-btn--block" style="min-height:48px;border-radius:12px;font-weight:700">Save Note</button></div></div></div>
     `;
     root.querySelector('#saveCredit').addEventListener('click', async ()=>{ const customer = root.querySelector('#cr_customer').value.trim(); const amount = root.querySelector('#cr_amount').value; if (!customer || !amount) return alert('Fill required'); try { await addCredit({ stationId: shift.stationId, shiftId: shift.id, customer, amount }); location.reload(); } catch(e){ alert(e.message); } });
-    root.querySelector('#saveExpense').addEventListener('click', async ()=>{ const category = root.querySelector('#ex_cat').value; const amount = root.querySelector('#ex_amount').value; if (!amount) return alert('Amount required'); try { await addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount, description: category }); location.reload(); } catch(e){ alert(e.message); } });
+    root.querySelector('#ex_cat').addEventListener('change', (e)=>{
+      root.querySelector('#ex_liters_wrap').style.display = e.target.value==='Testing' ? 'block' : 'none';
+    });
+    root.querySelector('#saveExpense').addEventListener('click', async ()=>{ const category = root.querySelector('#ex_cat').value; const amount = root.querySelector('#ex_amount').value; const liters = root.querySelector('#ex_liters').value; if (!amount) return alert('Amount required'); try { await addExpense({ stationId: shift.stationId, shiftId: shift.id, category, amount, description: category, ...(category==='Testing' && liters ? { liters } : {}) }); location.reload(); } catch(e){ alert(e.message); } });
     root.querySelector('#saveNote').addEventListener('click', async ()=>{ const text = root.querySelector('#note_text').value.trim(); if (!text) return alert('Note required'); try { await addNote({ stationId: shift.stationId, shiftId: shift.id, text }); location.reload(); } catch(e){ alert(e.message); } });
 
     // Add Pump / Nozzle to active shift
@@ -291,6 +294,10 @@ export async function shiftDetailView({ root, params }) {
     const t = shift.totals || {};
     const totalCredits = credits.reduce((a,c)=>a+Number(c.amount||0),0);
     const totalExpenses = expenses.reduce((a,c)=>a+Number(c.amount||0),0);
+    const testingExpenses = expenses.filter(e=>(e.category||'').toLowerCase()==='testing');
+    const totalTestingAmount = testingExpenses.reduce((a,c)=>a+Number(c.amount||0),0);
+    const totalTestingLiters = testingExpenses.reduce((a,c)=>a+Number(c.liters||0),0);
+    const fuelGroupLiters = t.byFuelGroup || sumLitersByFuelGroup(shift.nozzles||[]);
     const isShort = (t.variance||0) < -0.5;
     const isExcess = (t.variance||0) > 0.5;
     const isRejected = shift.status === 'REJECTED';
@@ -338,6 +345,16 @@ export async function shiftDetailView({ root, params }) {
           <div style="padding:16px;background:#f8f9fa;border-bottom:1px solid #eee">
             <div style="display:flex;justify-content:space-between;font-size:13px"><div><div style="color:var(--text-secondary);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Employee</div><div style="font-weight:600;margin-top:4px;font-size:14px">${shift.employeeName}</div></div><div style="text-align:right"><div style="color:var(--text-secondary);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Date</div><div style="font-weight:500;margin-top:4px;font-size:12px">${new Date(shift.startTime).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})}</div><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${new Date(shift.startTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} → ${shift.endTime? new Date(shift.endTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):''}</div></div></div>
           </div>
+          <div style="padding:16px 18px 0 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px;text-align:center">
+              <div style="font-size:10px;font-weight:800;color:#1677ff;letter-spacing:0.5px">MS LITERS</div>
+              <div style="font-size:18px;font-weight:900;margin-top:2px">${Number(fuelGroupLiters.MS||0).toFixed(2)} L</div>
+            </div>
+            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;text-align:center">
+              <div style="font-size:10px;font-weight:800;color:#fa8c16;letter-spacing:0.5px">HSD LITERS</div>
+              <div style="font-size:18px;font-weight:900;margin-top:2px">${Number(fuelGroupLiters.HSD||0).toFixed(2)} L</div>
+            </div>
+          </div>
           <div style="padding:18px">
             <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center"><span>Fuel Sales</span>${canReview && isPending ? `<span style="font-size:10px;color:#fa541c;background:#fffbe6;padding:4px 8px;border-radius:20px">Tap ⚠️ to flag</span>` : ''}</div>
             ${(shift.nozzles||[]).map(n=>{
@@ -367,6 +384,7 @@ export async function shiftDetailView({ root, params }) {
                     <span style="color:var(--text-secondary);display:flex;align-items:center;gap:8px">${p.label} ${shift.correctionRequests?.some(cr=>cr.type==='payment' && cr.field===p.field)?'<span style="font-size:9px;background:#ff4d4f;color:white;padding:2px 6px;border-radius:10px">FLAGGED</span>':''}</span><span style="font-weight:600">${formatCurrency(p.val)}</span>
                   </div>
                 `).join('') || `<div style="font-size:13px;color:var(--text-secondary);text-align:center;padding:10px">No payments recorded</div>`}
+                ${totalTestingAmount>0.5 ? `<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;border-top:1px dashed #e0e0e0;margin-top:6px"><span style="color:var(--text-secondary);display:flex;align-items:center;gap:6px">🧪 Testing${totalTestingLiters>0?` (${totalTestingLiters.toFixed(2)} L)`:''}</span><span style="font-weight:600">${formatCurrency(totalTestingAmount)}</span></div>` : ''}
                 <div style="height:1px;background:#e0e0e0;margin:10px 0"></div>
                 <div style="display:flex;justify-content:space-between;font-size:14px"><span style="color:var(--text-secondary)">Recorded Payments</span><span style="font-weight:600">${formatCurrency(t.totalPayments||0)}</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:6px"><span style="color:var(--text-secondary)">Gross Expected</span><span style="font-weight:600">${formatCurrency(t.totalRevenue||0)}</span></div>
@@ -402,7 +420,7 @@ export async function shiftDetailView({ root, params }) {
             </div>
             <div style="margin-top:14px;padding:10px;background:#f8f9fa;border-radius:10px;border:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-secondary)">✅ Simple: No jackpot collections • To Handover = Net - Payments • Check Reports for totals</div></div>
             ${credits.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Credits • ${formatCurrency(totalCredits)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="credit" data-field="credits" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${credits.map(c=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${c.customer}</span><span style="font-weight:600">${formatCurrency(c.amount)}</span></div>`).join('')}</div>` : ''}
-            ${expenses.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Expenses • ${formatCurrency(totalExpenses)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="expense" data-field="expenses" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${e.category}</span><span style="font-weight:600">${formatCurrency(e.amount)}</span></div>`).join('')}</div>` : ''}
+            ${expenses.length ? `<div style="margin-top:18px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>Expenses • ${formatCurrency(totalExpenses)}</span>${canReview && isPending ? `<button class="neu-btn flag-btn" data-type="expense" data-field="expenses" style="min-height:32px;padding:0 12px;border-radius:20px;font-size:11px;background:#fffbe6;border:1px solid #ffe58f;color:#ad6800">⚠️ Flag</button>` : ''}</div>${expenses.map(e=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #eee"><span>${e.category}${(e.category||'').toLowerCase()==='testing' && e.liters ? ` (${Number(e.liters).toFixed(2)} L${e.fuelType?' '+e.fuelType:''})` : ''}</span><span style="font-weight:600">${formatCurrency(e.amount)}</span></div>`).join('')}</div>` : ''}
             ${notes.length ? `<div style="margin-top:18px;padding:12px;background:#fffbe6;border-radius:10px;border:0.5px solid #ffe58f"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#ad6800;margin-bottom:8px">Note</div><div style="font-size:13px;line-height:1.4">${notes[0]?.text||''}</div></div>` : ''}
           </div>
           <div style="padding:14px 18px;background:#f8f9fa;border-top:1px solid #eee;text-align:center"><div style="font-size:11px;color:var(--text-tertiary)">Thank you • FuelOps • ${stationName}</div><div style="font-size:10px;color:var(--text-tertiary);margin-top:3px">Generated ${new Date().toLocaleString('en-IN')}</div></div>
@@ -545,24 +563,35 @@ export async function closeShiftView({ root, params }) {
       </div>
 
       <div class="neu-card" style="margin-top:18px;padding:16px;border-radius:14px">
-        <h3 style="font-weight:700;font-size:15px">💰 Payments Received</h3>
+        <h3 style="font-weight:700;font-size:15px">💰 Cash &amp; UPI Received</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">The two ways you actually collect money at the pump</p>
         <div class="grid grid-2" style="margin-top:14px;gap:12px">
-          <div><label class="label">Cash</label><input id="pay_cash" class="neu-input" type="number" value="${shift.totals?.payments?.cash||0}" style="min-height:48px;border-radius:10px;font-size:15px"></div>
-          <div><label class="label">Card</label><input id="pay_card" class="neu-input" type="number" value="${shift.totals?.payments?.card||0}" style="min-height:48px;border-radius:10px;font-size:15px"></div>
-          <div><label class="label">UPI</label><input id="pay_upi" class="neu-input" type="number" value="${shift.totals?.payments?.upi||0}" style="min-height:48px;border-radius:10px;font-size:15px"></div>
-          <div><label class="label">Credit</label><input id="pay_credit" class="neu-input" type="number" value="${shift.totals?.payments?.credit||0}" style="min-height:48px;border-radius:10px;font-size:15px"></div>
-          <div style="grid-column:span 2"><label class="label">Other</label><input id="pay_other" class="neu-input" type="number" value="${shift.totals?.payments?.other||0}" style="min-height:48px;border-radius:10px;font-size:15px"></div>
+          <div><label class="label">💵 Cash</label><input id="pay_cash" class="neu-input" type="number" value="${shift.totals?.payments?.cash||0}" style="min-height:52px;border-radius:10px;font-size:17px;font-weight:700"></div>
+          <div><label class="label">📱 UPI</label><input id="pay_upi" class="neu-input" type="number" value="${shift.totals?.payments?.upi||0}" style="min-height:52px;border-radius:10px;font-size:17px;font-weight:700"></div>
+        </div>
+        <button type="button" id="moreTogglePay" style="margin-top:12px;width:100%;min-height:34px;border-radius:10px;background:transparent;border:1px dashed var(--border);font-size:12px;font-weight:600;color:var(--text-secondary)">${(shift.totals?.payments?.card||shift.totals?.payments?.credit||shift.totals?.payments?.other) ? '▾ Hide extra payment types' : '+ Card / Credit / Other (optional)'}</button>
+        <div id="morePayFields" style="display:${(shift.totals?.payments?.card||shift.totals?.payments?.credit||shift.totals?.payments?.other) ? 'grid':'none'};grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+          <div><label class="label">Card</label><input id="pay_card" class="neu-input" type="number" value="${shift.totals?.payments?.card||0}" style="min-height:44px;border-radius:10px;font-size:14px"></div>
+          <div><label class="label">Credit</label><input id="pay_credit" class="neu-input" type="number" value="${shift.totals?.payments?.credit||0}" style="min-height:44px;border-radius:10px;font-size:14px"></div>
+          <div style="grid-column:span 2"><label class="label">Other</label><input id="pay_other" class="neu-input" type="number" value="${shift.totals?.payments?.other||0}" style="min-height:44px;border-radius:10px;font-size:14px"></div>
         </div>
         <div style="margin-top:14px" id="paymentSummary"></div>
       </div>
 
-      <!-- Quick expense buttons + notes while closing - as requested -->
+      <!-- Testing - dedicated repeatable add/remove list, separate from other expenses -->
       <div class="neu-card" style="margin-top:18px;padding:16px;border-radius:14px">
-        <h3 style="font-weight:700;font-size:15px">🧾 Quick Expenses</h3>
-        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Add testing, breakfast etc. while closing shift</p>
+        <h3 style="font-weight:700;font-size:15px">🧪 Testing</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Fuel used for machine/quality testing • Add or remove as many as needed</p>
+        <div id="testingList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
+        <button id="addTestingBtn" type="button" class="neu-btn" style="margin-top:10px;min-height:44px;border-radius:10px;font-weight:700;width:100%;border:1.5px dashed var(--border)">+ Add Testing Entry</button>
+      </div>
+
+      <!-- Other quick expenses - unrelated to fuel testing -->
+      <div class="neu-card" style="margin-top:18px;padding:16px;border-radius:14px">
+        <h3 style="font-weight:700;font-size:15px">🧾 Other Quick Expenses</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:4px">Breakfast, tea, cleaning etc. while closing shift</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
           ${[
-            {label:'Testing', icon:'🧪', cat:'Testing'},
             {label:'Breakfast', icon:'🍳', cat:'Breakfast'},
             {label:'Tea & Snacks', icon:'☕', cat:'Tea & Snacks'},
             {label:'Cleaning', icon:'🧹', cat:'Cleaning'},
@@ -599,6 +628,64 @@ export async function closeShiftView({ root, params }) {
 
   const closingInputs = root.querySelectorAll('.closing-input');
   let quickExpenses = [];
+  let testingEntries = []; // { fuelType, liters, amount, note, id } - repeatable, add/remove
+
+  root.querySelector('#moreTogglePay')?.addEventListener('click', ()=>{
+    const box = root.querySelector('#morePayFields');
+    const btn = root.querySelector('#moreTogglePay');
+    const show = box.style.display === 'none';
+    box.style.display = show ? 'grid' : 'none';
+    btn.textContent = show ? '▾ Hide extra payment types' : '+ Card / Credit / Other (optional)';
+  });
+
+  function renderTestingList() {
+    const list = root.querySelector('#testingList');
+    if (testingEntries.length === 0) {
+      list.innerHTML = `<div style="font-size:12px;color:var(--text-secondary);text-align:center;padding:10px;background:var(--bg);border-radius:10px">No testing entries yet</div>`;
+      return;
+    }
+    list.innerHTML = testingEntries.map((t,i)=>`
+      <div class="neu-card neu-card--sm" style="padding:12px;border-radius:10px;border:0.5px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div style="font-weight:700;font-size:13px">${t.fuelType} • Testing #${i+1}</div>
+          <button class="neu-btn remove-testing" data-idx="${i}" style="min-height:28px;min-width:28px;border-radius:50%;padding:0;font-size:12px">✕</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${t.liters ? t.liters.toFixed(2)+' L • ' : ''}${formatCurrency(t.amount)}${t.note ? ' • '+t.note : ''}</div>
+      </div>
+    `).join('');
+    root.querySelectorAll('.remove-testing').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        testingEntries.splice(Number(b.dataset.idx),1);
+        renderTestingList();
+        recalc();
+      });
+    });
+  }
+  renderTestingList();
+
+  root.querySelector('#addTestingBtn').addEventListener('click', ()=>{
+    const fuelOptions = (shift.nozzles||[]).map(n=>n.fuelType);
+    const uniqueFuels = [...new Set(fuelOptions)];
+    let fuelType = uniqueFuels[0] || 'Petrol';
+    if (uniqueFuels.length > 1) {
+      const choice = prompt(`Which fuel was tested?\n${uniqueFuels.map((f,i)=>`${i+1}. ${f}`).join('\n')}\n\nEnter number:`, '1');
+      const idx = Number(choice) - 1;
+      if (uniqueFuels[idx]) fuelType = uniqueFuels[idx];
+    }
+    const litersStr = prompt(`Liters used for ${fuelType} testing:`, '1');
+    if (litersStr === null) return;
+    const liters = Number(litersStr) || 0;
+    const price = activePrices[fuelType]?.price || 0;
+    const defaultAmount = Math.round(liters * price * 100) / 100;
+    const amountStr = prompt(`Amount for this testing (₹):`, defaultAmount || '');
+    if (amountStr === null) return;
+    const amount = Number(amountStr);
+    if (isNaN(amount) || amount < 0) return alert('Enter a valid amount');
+    const note = prompt('Note (optional):', '') || '';
+    testingEntries.push({ fuelType, liters, amount, note, id: Date.now() });
+    renderTestingList();
+    recalc();
+  });
 
   function recalc() {
     let totalRevenue = 0;
@@ -621,7 +708,8 @@ export async function closeShiftView({ root, params }) {
     const credit = Number(root.querySelector('#pay_credit').value||0);
     const other = Number(root.querySelector('#pay_other').value||0);
     const totalPayments = cash+card+upi+credit+other;
-    const quickTotal = quickExpenses.reduce((a,e)=>a+Number(e.amount||0),0);
+    const testingTotal = testingEntries.reduce((a,e)=>a+Number(e.amount||0),0);
+    const quickTotal = quickExpenses.reduce((a,e)=>a+Number(e.amount||0),0) + testingTotal;
 
     // CORRECTED ACCOUNTING - as per owner: testing fuel came out of nozzle, so it's part of revenue
     // but it's an expense that should REDUCE whole balance you owe to owner
@@ -737,6 +825,9 @@ export async function closeShiftView({ root, params }) {
       for (const exp of quickExpenses) {
         await addExpense({ stationId: shift.stationId, shiftId: shift.id, category: exp.category, amount: exp.amount, description: exp.description });
       }
+      for (const t of testingEntries) {
+        await addExpense({ stationId: shift.stationId, shiftId: shift.id, category: 'Testing', amount: t.amount, description: t.note || `${t.fuelType} testing`, fuelType: t.fuelType, liters: t.liters });
+      }
       if (closingNote) {
         await addNote({ stationId: shift.stationId, shiftId: shift.id, text: closingNote });
       }
@@ -760,10 +851,20 @@ export async function closeShiftView({ root, params }) {
 }
 
 function generateShiftCSV(shift, credits, expenses) {
+  const t = shift.totals || {};
+  const fuelGroup = t.byFuelGroup || {};
   let csv = `Shift ID,${shift.id}\nEmployee,${shift.employeeName}\nStart,${shift.startTime}\nEnd,${shift.endTime||''}\nStatus,${shift.status}\n\n`;
+  csv += `MS Liters,${fuelGroup.MS||0}\nHSD Liters,${fuelGroup.HSD||0}\n\n`;
   csv += `Nozzle ID,Fuel Type,Opening,Closing,Liters,Price,Revenue\n`;
   (shift.nozzles||[]).forEach(n=>{ csv += `${n.nozzleId},${n.fuelType},${n.openingReading},${n.closingReading||''},${n.litersSold||''},${n.price||''},${n.revenue||''}\n`; });
-  csv += `\nTotal Revenue,${shift.totals?.totalRevenue||0}\nTotal Payments,${shift.totals?.totalPayments||0}\nVariance,${shift.totals?.variance||0}\n\n`;
+  csv += `\nTotal Revenue,${t.totalRevenue||0}\nTotal Payments,${t.totalPayments||0}\nVariance,${t.variance||0}\n`;
+  csv += `Cash,${t.payments?.cash||0}\nUPI,${t.payments?.upi||0}\n\n`;
+  const testingExpenses = (expenses||[]).filter(e=>(e.category||'').toLowerCase()==='testing');
+  if (testingExpenses.length) {
+    csv += `Testing Entries\nFuel Type,Liters,Amount,Note\n`;
+    testingExpenses.forEach(e=>{ csv += `${e.fuelType||''},${e.liters||0},${e.amount||0},${e.description||''}\n`; });
+    csv += `\n`;
+  }
   if (shift.correctionRequests?.length) { csv += `Correction Requests\nType,Field,Message,Requested By\n`; shift.correctionRequests.forEach(cr=>{ csv += `${cr.type},${cr.field},${cr.message},${cr.requestedByName||''}\n`; }); }
   return csv;
 }

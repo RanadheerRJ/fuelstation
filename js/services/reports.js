@@ -1,4 +1,5 @@
 import { queryDocs } from './firestoreService.js';
+import { sumLitersByFuelGroup } from './calc.js';
 
 export async function getDailyReport(stationId, dateStr) {
   const shifts = await queryDocs('shifts', s => s.stationId === stationId);
@@ -56,12 +57,18 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
   // Map shiftId -> total expenses
   const expenseByShift = {};
   const creditsByShift = {};
+  const testingByShift = {}; // shiftId -> { amount, liters } - additive, used for Testing report card
   allTx.forEach(tx => {
     if (!tx.shiftId) return;
     const d = new Date(tx.createdAt);
     if (d < from || d > to) return; // only in range
     if (tx.type === 'expense') {
       expenseByShift[tx.shiftId] = (expenseByShift[tx.shiftId]||0) + Number(tx.amount||0);
+      if ((tx.category||'').toLowerCase() === 'testing') {
+        if (!testingByShift[tx.shiftId]) testingByShift[tx.shiftId] = { amount: 0, liters: 0 };
+        testingByShift[tx.shiftId].amount += Number(tx.amount||0);
+        testingByShift[tx.shiftId].liters += Number(tx.liters||0);
+      }
     }
     if (tx.type === 'credit') {
       creditsByShift[tx.shiftId] = (creditsByShift[tx.shiftId]||0) + Number(tx.amount||0);
@@ -70,6 +77,8 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
 
   let totalLiters = 0, totalGross = 0, totalExpenses = 0, totalNet = 0, totalPayments = 0, variance = 0;
   let toCollect = 0, toReturn = 0, collected = 0, returned = 0;
+  let totalMsLiters = 0, totalHsdLiters = 0, totalOtherLiters = 0;
+  let totalTestingAmount = 0, totalTestingLiters = 0;
   const byFuel = {};
   const byEmployee = {};
   const byDate = {};
@@ -88,6 +97,18 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
     totalExpenses += exp;
     totalNet += net;
     totalCredits += Number(creditsByShift[sh.id]||0);
+
+    // MS/HSD liters - prefer stored byFuelGroup (fast path), fallback to recomputing from nozzles (old shifts)
+    const fuelGroup = t.byFuelGroup || sumLitersByFuelGroup(sh.nozzles || []);
+    totalMsLiters += Number(fuelGroup.MS||0);
+    totalHsdLiters += Number(fuelGroup.HSD||0);
+    totalOtherLiters += Number(fuelGroup.OTHER||0);
+
+    const testingInfo = testingByShift[sh.id];
+    if (testingInfo) {
+      totalTestingAmount += testingInfo.amount;
+      totalTestingLiters += testingInfo.liters;
+    }
 
     const payments = Number(t.totalPayments||0);
     totalPayments += payments;
@@ -131,13 +152,15 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
     if (netVariance > 0.5) byEmployee[empKey].toReturn += netVariance;
 
     const dateKey = new Date(sh.startTime).toISOString().slice(0,10);
-    if (!byDate[dateKey]) byDate[dateKey] = { date: dateKey, shifts:0, liters:0, gross:0, expenses:0, net:0, revenue:0 };
+    if (!byDate[dateKey]) byDate[dateKey] = { date: dateKey, shifts:0, liters:0, gross:0, expenses:0, net:0, revenue:0, msLiters:0, hsdLiters:0 };
     byDate[dateKey].shifts += 1;
     byDate[dateKey].liters += liters;
     byDate[dateKey].gross += gross;
     byDate[dateKey].expenses += exp;
     byDate[dateKey].net += net;
     byDate[dateKey].revenue += net;
+    byDate[dateKey].msLiters += Number(fuelGroup.MS||0);
+    byDate[dateKey].hsdLiters += Number(fuelGroup.HSD||0);
   });
 
   // Adjust byFuel net proportionally based on total expenses share
@@ -186,6 +209,13 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
     settlements,
     count: shifts.length,
     expenseByShift,
+    // Additive fields for MS/HSD/Testing report card - two-way door, safe to ignore if unused
+    totalMsLiters,
+    totalHsdLiters,
+    totalOtherLiters,
+    totalTestingAmount,
+    totalTestingLiters,
+    testingByShift,
   };
 }
 

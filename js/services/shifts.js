@@ -1,6 +1,6 @@
 import { listDocs, addDocTo, updateDocById, getDocById, queryDocs } from './firestoreService.js';
 import { getState } from '../state.js';
-import { calcLitersSold, calcRevenue, calcShiftTotals, calcPaymentsTotal, calcVariance } from './calc.js';
+import { calcLitersSold, calcRevenue, calcShiftTotals, calcPaymentsTotal, calcVariance, sumLitersByFuelGroup } from './calc.js';
 import { getPriceForFuelAtTime } from './prices.js';
 
 export async function getShifts(stationId, opts={}) {
@@ -72,12 +72,16 @@ export async function closeShift(shiftId, { closingReadings, payments }) {
 
   const totalsCalc = calcShiftTotals(updatedNozzles);
   const totalPayments = calcPaymentsTotal(payments);
+  // MS/HSD liters breakdown - additive, used by reports & receipt (two-way door: byFuel still kept as-is)
+  const byFuelGroup = sumLitersByFuelGroup(updatedNozzles);
 
   // Expenses must be removed from gross because fuel came out of nozzle (testing etc) - whole amount to owner is net
   let totalExpenses = 0;
+  let totalTestingLiters = 0;
   try {
     const txs = await queryDocs('transactions', t => t.stationId === shift.stationId && t.shiftId === shift.id && t.type === 'expense');
     totalExpenses = txs.reduce((a,b)=>a+Number(b.amount||0),0);
+    totalTestingLiters = txs.filter(t => (t.category||'').toLowerCase()==='testing').reduce((a,b)=>a+Number(b.liters||0),0);
   } catch { totalExpenses = 0; }
 
   const grossRevenue = totalsCalc.totalRevenue;
@@ -94,6 +98,8 @@ export async function closeShift(shiftId, { closingReadings, payments }) {
       totalNet: netRevenue,
       netRevenue,
       byFuel: totalsCalc.byFuel,
+      byFuelGroup, // { MS, HSD, OTHER } liters - additive
+      totalTestingLiters,
       payments,
       totalPayments,
       variance,

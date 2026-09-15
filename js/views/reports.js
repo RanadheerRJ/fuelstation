@@ -2,7 +2,11 @@ import { getState } from '../state.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getReportForRange } from '../services/reports.js';
 import { getShifts } from '../services/shifts.js';
-import { formatLiters } from '../services/calc.js';
+import { formatLiters, formatCurrency } from '../services/calc.js';
+
+function formatCurrencyShort(n) {
+  return formatCurrency(n).replace('.00','');
+}
 import { getEmployees } from '../services/users.js';
 
 export async function reportsView({ root, query }) {
@@ -66,6 +70,7 @@ export async function reportsView({ root, query }) {
 
   // totals
   let totalLiters = 0, msLiters = 0, hsdLiters = 0;
+  let cashTotal = 0, upiTotal = 0, testingAmount = 0, testingLiters = 0;
   filteredShifts.forEach(s=>{
     totalLiters += s.totals?.totalLiters||0;
     (s.nozzles||[]).forEach(n=>{
@@ -73,6 +78,10 @@ export async function reportsView({ root, query }) {
       if (ft.includes('petrol') || ft.includes('ms')) msLiters += n.litersSold||0;
       else if (ft.includes('diesel') || ft.includes('hsd')) hsdLiters += n.litersSold||0;
     });
+    cashTotal += Number(s.totals?.payments?.cash||0);
+    upiTotal += Number(s.totals?.payments?.upi||0);
+    const testingInfo = report.testingByShift?.[s.id];
+    if (testingInfo) { testingAmount += testingInfo.amount||0; testingLiters += testingInfo.liters||0; }
   });
 
   // group by date
@@ -101,7 +110,36 @@ export async function reportsView({ root, query }) {
       <!-- Header - only title -->
       <div style="padding:6px 4px 12px 4px">
         <h1 style="font-size:28px;font-weight:900;letter-spacing:-1px;line-height:1">Reports</h1>
-        <div style="font-size:12px;color:#6b7280;margin-top:4px">${stations.find(s=>s.id===stationId)?.name||''} • ${filteredShifts.length} reports • ${fmtLit(msLiters)} MS • ${fmtLit(hsdLiters)} HSD • ${fmtLit(totalLiters)} total</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">${stations.find(s=>s.id===stationId)?.name||''} • ${filteredShifts.length} reports</div>
+      </div>
+
+      <!-- Fuel liters summary - MS and HSD shown first, big & clear -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;padding:14px">
+          <div style="font-size:11px;font-weight:800;color:#1677ff;letter-spacing:0.5px">⛽ MS (PETROL)</div>
+          <div style="font-size:22px;font-weight:900;margin-top:4px;color:#111">${fmtLit(msLiters)}</div>
+        </div>
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:14px">
+          <div style="font-size:11px;font-weight:800;color:#fa8c16;letter-spacing:0.5px">⛽ HSD (DIESEL)</div>
+          <div style="font-size:22px;font-weight:900;margin-top:4px;color:#111">${fmtLit(hsdLiters)}</div>
+        </div>
+      </div>
+
+      <!-- Cash summary: Cash, UPI, Testing -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+        <div style="background:white;border:1px solid #e5e7eb;border-radius:14px;padding:12px;text-align:center">
+          <div style="font-size:10px;font-weight:800;color:#6b7280;letter-spacing:0.5px">💵 CASH</div>
+          <div style="font-size:15px;font-weight:800;margin-top:4px">${formatCurrencyShort(cashTotal)}</div>
+        </div>
+        <div style="background:white;border:1px solid #e5e7eb;border-radius:14px;padding:12px;text-align:center">
+          <div style="font-size:10px;font-weight:800;color:#6b7280;letter-spacing:0.5px">📱 UPI</div>
+          <div style="font-size:15px;font-weight:800;margin-top:4px">${formatCurrencyShort(upiTotal)}</div>
+        </div>
+        <div style="background:white;border:1px solid #e5e7eb;border-radius:14px;padding:12px;text-align:center">
+          <div style="font-size:10px;font-weight:800;color:#6b7280;letter-spacing:0.5px">🧪 TESTING</div>
+          <div style="font-size:15px;font-weight:800;margin-top:4px">${formatCurrencyShort(testingAmount)}</div>
+          ${testingLiters>0 ? `<div style="font-size:10px;color:#9ca3af;margin-top:2px">${fmtLit(testingLiters)}</div>` : ''}
+        </div>
       </div>
 
       <!-- Filters - minimal iOS -->
@@ -234,14 +272,17 @@ export async function reportsView({ root, query }) {
   });
 
   root.querySelector('#exportBtn')?.addEventListener('click', ()=>{
-    let csv = `Date,Employee,Pump,Fuel,MS/HSD,Liters\\n`;
+    let csv = `Date,Employee,Pump,Fuel,MS/HSD,Liters,Cash,UPI,Testing Amount,Testing Liters\\n`;
     filteredShifts.forEach(s=>{
       const date = new Date(s.startTime).toLocaleDateString('en-IN');
+      const cash = s.totals?.payments?.cash||0;
+      const upi = s.totals?.payments?.upi||0;
+      const testingInfo = report.testingByShift?.[s.id] || { amount:0, liters:0 };
       (s.nozzles||[]).forEach(n=>{
         const pump = pumps.find(p=>p.id===n.pumpId);
         const ft = (n.fuelType||'').toLowerCase();
         const label = ft.includes('petrol')||ft.includes('ms') ? 'MS' : ft.includes('diesel')||ft.includes('hsd') ? 'HSD' : n.fuelType;
-        csv += `${date},${s.employeeName},${pump?.name||''},${n.fuelType},${label},${n.litersSold||0}\\n`;
+        csv += `${date},${s.employeeName},${pump?.name||''},${n.fuelType},${label},${n.litersSold||0},${cash},${upi},${testingInfo.amount},${testingInfo.liters}\\n`;
       });
     });
     const blob = new Blob([csv], { type:'text/csv' });
