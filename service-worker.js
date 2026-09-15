@@ -1,5 +1,14 @@
-// FuelOps Service Worker - PROD FINAL - single super admin, 10-digit, Dev vs User, Firebase real
-const CACHE_NAME = 'fuelops-v42-fix-expense-undefined-description-20260914';
+// FuelOps Service Worker
+// STRATEGY (fixes "old version stuck in PWA cache" issue):
+//  - App shell (HTML/JS/CSS/manifest) => NETWORK-FIRST. Always tries the network
+//    first so users get the latest deployed code immediately when online.
+//    Falls back to cache only when offline / network fails.
+//  - Static assets (icons etc) => CACHE-FIRST (rarely change, safe to cache hard).
+//  - CACHE_NAME is injected by scripts/bump-sw-version.js on every commit/deploy,
+//    so you never need to hand-edit a version string again - every push
+//    automatically busts old caches for every user.
+const CACHE_NAME = 'fuelops-20260915-ca1e744198';
+
 const APP_SHELL = [
   './',
   './index.html',
@@ -36,69 +45,97 @@ const APP_SHELL = [
   './js/views/settings.js',
   './js/views/superAdmin.js',
   './js/views/devSetup.js',
-  './assets/icons/icon.svg'
+];
+
+// Static, rarely-changing assets - safe to cache-first
+const STATIC_ASSETS = [
+  './assets/icons/icon.svg',
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install');
+  console.log('[SW] Install', CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(APP_SHELL).catch(err => {
+      return cache.addAll([...APP_SHELL, ...STATIC_ASSETS]).catch(err => {
         console.warn('[SW] Cache addAll failed', err);
-        // Try individually
-        return Promise.allSettled(APP_SHELL.map(url => cache.add(url).catch(()=>{})));
+        return Promise.allSettled([...APP_SHELL, ...STATIC_ASSETS].map(url => cache.add(url).catch(()=>{})));
       });
     })
   );
-  self.skipWaiting();
+  // Do NOT auto skipWaiting here - let the page decide (see message handler below)
+  // so we can show an "update available" prompt instead of silently swapping code
+  // under an active user's feet.
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate');
+  console.log('[SW] Activate', CACHE_NAME);
   event.waitUntil(
     caches.keys().then(keys => {
       return Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
+
+// Allow the page to tell a waiting SW to activate immediately (user clicked "Refresh")
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+function isAppShellRequest(url) {
+  if (url.hostname.includes('firebase') || url.hostname.includes('googleapis') || url.hostname.includes('gstatic')) {
+    return false;
+  }
+  return url.origin === self.location.origin;
+}
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Skip Firebase requests, don't cache
+  // Skip Firebase / CDN requests entirely - never cache, always network
   if (url.hostname.includes('firebase') || url.hostname.includes('googleapis') || url.hostname.includes('gstatic')) {
     return;
   }
 
-  // For navigation requests, serve index.html (SPA) - hash routing works offline
-  if (req.mode === 'navigate') {
+  if (req.method !== 'GET') return;
+
+  const isStatic = STATIC_ASSETS.some(a => url.pathname.endsWith(a.replace('./','/')));
+
+  if (isStatic) {
+    // Cache-first for static, rarely-changing assets
     event.respondWith(
-      caches.match('./index.html').then(cached => {
-        return cached || fetch(req).catch(() => caches.match('./index.html'));
-      })
+      caches.match(req).then(cached => cached || fetch(req).then(res => {
+        if (res.ok) { const clone = res.clone(); caches.open(CACHE_NAME).then(c => c.put(req, clone)); }
+        return res;
+      }))
     );
     return;
   }
 
-  // Cache-first for same-origin assets
-  if (url.origin === self.location.origin || url.pathname.startsWith(self.location.pathname.replace('service-worker.js',''))) {
+  // Navigation requests (SPA) - network-first so users always get latest index.html
+  if (req.mode === 'navigate') {
     event.respondWith(
-      caches.match(req).then(cached => {
-        if (cached) return cached;
-        return fetch(req).then(res => {
-          // Cache successful GETs
-          if (req.method === 'GET' && res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-          }
-          return res;
-        }).catch(() => {
-          // offline fallback
-          return cached;
-        });
-      })
+      fetch(req).then(res => {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put('./index.html', clone));
+        return res;
+      }).catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // Same-origin app shell (JS/CSS) - network-first, cache as offline fallback only
+  if (isAppShellRequest(url)) {
+    event.respondWith(
+      fetch(req).then(res => {
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+        }
+        return res;
+      }).catch(() => caches.match(req))
     );
   }
 });

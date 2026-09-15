@@ -32,6 +32,26 @@ export function calcShiftTotals(nozzleReadings) {
   return { totalLiters, totalRevenue, byFuel };
 }
 
+// Centralized fuel classification - MS (Petrol/Premium Petrol) vs HSD (Diesel) vs OTHER (CNG etc)
+// Two-way door: purely additive helper, existing inline substring checks elsewhere keep working untouched.
+export function classifyFuel(fuelType) {
+  const f = (fuelType || '').toLowerCase();
+  if (f.includes('petrol') || f === 'ms' || f.includes(' ms')) return 'MS';
+  if (f.includes('diesel') || f.includes('hsd')) return 'HSD';
+  return 'OTHER';
+}
+
+// Sums liters by MS / HSD / OTHER given an array of nozzle-reading-like objects { fuelType, litersSold }
+export function sumLitersByFuelGroup(nozzleReadings = []) {
+  const out = { MS: 0, HSD: 0, OTHER: 0 };
+  nozzleReadings.forEach(n => {
+    const grp = classifyFuel(n.fuelType);
+    out[grp] += Number(n.litersSold || 0);
+  });
+  Object.keys(out).forEach(k => { out[k] = Math.round(out[k] * 100) / 100; });
+  return out;
+}
+
 export function calcPaymentsTotal(payments) {
   const { cash=0, card=0, upi=0, credit=0, other=0 } = payments || {};
   const total = Number(cash)+Number(card)+Number(upi)+Number(credit)+Number(other);

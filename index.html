@@ -29,6 +29,10 @@
 </head>
 <body>
   <div class="offline-banner" id="offlineBanner">⚠️ You're offline. Some features may not work.</div>
+  <div class="update-banner" id="updateBanner" style="display:none">
+    ✨ A new version is available.
+    <button id="updateReloadBtn" type="button">Refresh Now</button>
+  </div>
 
   <div class="app-shell">
     <header class="topbar" id="topbar" style="display:none">
@@ -51,12 +55,62 @@
   <script type="module" src="./js/app.js"></script>
 
   <!-- Service Worker registration - relative scope for GitHub Pages -->
+  <!-- Detects when a new version has been deployed and prompts the user to refresh,
+       instead of silently getting stuck on old cached code (see docs/PWA_UPDATES.md). -->
   <script>
     if ('serviceWorker' in navigator) {
+      const banner = document.getElementById('updateBanner');
+      const reloadBtn = document.getElementById('updateReloadBtn');
+      let refreshing = false;
+      let waitingWorker = null;
+
+      function showUpdateBanner(worker) {
+        waitingWorker = worker;
+        banner.style.display = 'flex';
+      }
+
+      reloadBtn.addEventListener('click', () => {
+        if (waitingWorker) {
+          waitingWorker.postMessage('SKIP_WAITING');
+        } else {
+          location.reload();
+        }
+      });
+
+      // When the new SW takes control, reload once to load the fresh page
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
+
       window.addEventListener('load', () => {
-        // Use relative path so scope matches GitHub Pages subpath
         navigator.serviceWorker.register('./service-worker.js', { scope: './' })
-          .then(reg => console.log('SW registered', reg.scope))
+          .then(reg => {
+            console.log('SW registered', reg.scope);
+
+            // A worker was already waiting when we loaded (e.g. update happened in background tab)
+            if (reg.waiting) showUpdateBanner(reg.waiting);
+
+            // Watch for a brand-new worker being found (new deploy) and installed
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // There's an existing controller, so this is an UPDATE, not first install
+                  showUpdateBanner(newWorker);
+                }
+              });
+            });
+
+            // Proactively ask the browser to check for a new SW file periodically
+            // (GitHub Pages users often keep tabs open for hours/days)
+            setInterval(() => reg.update().catch(()=>{}), 60 * 60 * 1000); // hourly
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') reg.update().catch(()=>{});
+            });
+          })
           .catch(err => console.warn('SW failed', err));
       });
     }
