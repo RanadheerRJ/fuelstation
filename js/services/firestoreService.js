@@ -83,12 +83,22 @@ export async function deleteDocById(collectionName, id) {
   return true;
 }
 
-export async function queryDocs(collectionName, predicate) {
+export function whereStation(stationId) {
+  if (!stationId) throw new Error('A station is required for this query');
+  return [{ field: 'stationId', op: '==', value: stationId }];
+}
+
+export async function queryDocs(collectionName, predicate, whereFilters = []) {
   if (getIsDemo()) {
     return demo.demoQuery(collectionName, predicate);
   }
-  // For Firestore, fetch all and filter client side for simplicity unless filters provided
-  const all = await listDocs(collectionName);
+  // Security Rules are not filters. Every live Firestore collection query must
+  // include constraints that prove its station/user scope to the rules engine;
+  // the predicate is retained only for secondary client-side filtering.
+  if (!whereFilters.length) {
+    throw new Error(`Live Firestore query for ${collectionName} requires an authorization scope`);
+  }
+  const all = await listDocs(collectionName, whereFilters);
   return all.filter(predicate);
 }
 

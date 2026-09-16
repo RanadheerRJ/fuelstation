@@ -290,7 +290,14 @@ service cloud.firestore {
     }
 
     match /stations/{stationId} {
-      allow get, list: if isActiveUser() && canReadStationDocument(stationId);
+      allow get: if isActiveUser() && canReadStationDocument(stationId);
+
+      // Assigned stations are fetched by document ID. Collection queries are
+      // reserved for platform administrators and ownerId-scoped owner lookups.
+      allow list: if isActiveUser() && (
+        isSuperAdmin()
+        || (isOwner() && resource.data.ownerId == request.auth.uid)
+      );
 
       allow create: if isActiveUser()
         && stationHasValidShape(request.resource.data)

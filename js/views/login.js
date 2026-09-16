@@ -14,17 +14,10 @@ export async function loginView({ root }) {
     hasUsers = demo.demoHasUsers();
     hasSuperAdmin = demo.demoHasSuperAdmin();
   } else {
-    try {
-      const { listDocs } = await import('../services/firestoreService.js');
-      const users = await listDocs('users');
-      hasUsers = users.length > 0;
-      hasSuperAdmin = users.some(u => u.role === 'super_admin');
-    } catch (e) {
-      firebaseError = e.message;
-      // If Firestore not enabled or rules blocking, assume super admin exists to hide setup from public
-      hasUsers = true;
-      hasSuperAdmin = true;
-    }
+    // User-directory reads require authentication. Never probe privileged
+    // profiles from the public login screen or expose live bootstrap controls.
+    hasUsers = true;
+    hasSuperAdmin = true;
   }
 
   // BOOTSTRAP: Only show Super Admin setup if NO super admin exists AND in demo mode

@@ -73,8 +73,8 @@ export async function dashboardView({ root }) {
   // Expenses map
   let expenseMap = {};
   try {
-    const { queryDocs } = await import('../services/firestoreService.js');
-    const allTx = await queryDocs('transactions', tx=> tx.stationId===activeStation.id && tx.type==='expense');
+    const { getTransactions } = await import('../services/transactions.js');
+    const allTx = await getTransactions(activeStation.id, { type: 'expense' });
     allTx.forEach(tx=>{ if (tx.shiftId) expenseMap[tx.shiftId] = (expenseMap[tx.shiftId]||0)+Number(tx.amount||0); });
   } catch {}
 

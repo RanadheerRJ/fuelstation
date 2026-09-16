@@ -4,16 +4,22 @@ import * as demo from '../services/demoStore.js';
 
 export async function devSetupView({ root }) {
   const { isDemo } = getFirebaseStatus();
-  
+
+  if (!isDemo) {
+    root.innerHTML = `
+      <div class="login-wrapper">
+        <div class="login-card" style="text-align:center">
+          <h2>Live setup is protected</h2>
+          <p style="margin-top:10px;color:var(--text-secondary)">The first privileged account must be provisioned by an authorized backend administrator.</p>
+          <button class="neu-btn neu-btn--primary" style="margin-top:16px" onclick="location.hash='#/login'">Back to Login</button>
+        </div>
+      </div>`;
+    return;
+  }
+
   let hasSuperAdmin = false;
   try {
-    if (isDemo) {
-      hasSuperAdmin = demo.demoHasSuperAdmin();
-    } else {
-      const { listDocs } = await import('../services/firestoreService.js');
-      const users = await listDocs('users');
-      hasSuperAdmin = users.some(u => u.role === 'super_admin');
-    }
+    hasSuperAdmin = demo.demoHasSuperAdmin();
   } catch (e) {
     console.warn('Check super admin failed:', e);
   }

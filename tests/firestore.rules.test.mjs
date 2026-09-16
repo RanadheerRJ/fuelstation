@@ -354,6 +354,16 @@ describe('authentication and station isolation', () => {
     await assertSucceeds(updateDoc(doc(dbFor(IDS.superAdmin), 'stations', STATION_A), { ownerId: IDS.ownerB }));
   });
 
+  test('owner station queries are constrained by owner id', async () => {
+    const owned = query(
+      collection(dbFor(IDS.ownerA), 'stations'),
+      where('ownerId', '==', IDS.ownerA),
+    );
+    await assertSucceeds(getDocs(owned));
+    await assertFails(getDocs(collection(dbFor(IDS.ownerA), 'stations')));
+    await assertSucceeds(getDocs(collection(dbFor(IDS.superAdmin), 'stations')));
+  });
+
   test('prevents client station deletion', async () => {
     await assertFails(deleteDoc(doc(dbFor(IDS.ownerA), 'stations', STATION_A)));
     await assertFails(deleteDoc(doc(dbFor(IDS.superAdmin), 'stations', STATION_A)));
@@ -691,6 +701,37 @@ describe('transactions, notes, settlements, and audit logs', () => {
     await assertFails(getDoc(doc(dbFor(IDS.attendantA), 'transactions', 'expense-a2')));
     await assertSucceeds(getDoc(doc(dbFor(IDS.managerA), 'transactions', 'expense-a2')));
     await assertFails(getDoc(doc(dbFor(IDS.managerA), 'transactions', 'expense-b')));
+  });
+
+  test('attendant list queries must prove ownership of private records', async () => {
+    const ownTransactions = query(
+      collection(dbFor(IDS.attendantA), 'transactions'),
+      where('stationId', '==', STATION_A),
+      where('createdBy', '==', IDS.attendantA),
+    );
+    const ownShiftTransactions = query(
+      collection(dbFor(IDS.attendantA), 'transactions'),
+      where('stationId', '==', STATION_A),
+      where('shiftId', '==', 'active-a'),
+    );
+    const ownNotes = query(
+      collection(dbFor(IDS.attendantA), 'notes'),
+      where('stationId', '==', STATION_A),
+      where('userId', '==', IDS.attendantA),
+    );
+    const ownSettlements = query(
+      collection(dbFor(IDS.attendantA), 'settlements'),
+      where('stationId', '==', STATION_A),
+      where('staffUserId', '==', IDS.attendantA),
+    );
+    await assertSucceeds(getDocs(ownTransactions));
+    await assertSucceeds(getDocs(ownShiftTransactions));
+    await assertSucceeds(getDocs(ownNotes));
+    await assertSucceeds(getDocs(ownSettlements));
+    await assertFails(getDocs(query(
+      collection(dbFor(IDS.attendantA), 'transactions'),
+      where('stationId', '==', STATION_A),
+    )));
   });
 
   test('transaction history is append-only for every client role', async () => {

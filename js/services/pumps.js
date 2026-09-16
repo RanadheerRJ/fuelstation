@@ -1,14 +1,14 @@
-import { listDocs, addDocTo, updateDocById, getDocById, deleteDocById, logAudit, queryDocs } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, getDocById, deleteDocById, logAudit, queryDocs, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 
 export async function getPumps(stationId) {
-  return await queryDocs('pumps', p => p.stationId === stationId);
+  return await queryDocs('pumps', p => p.stationId === stationId, whereStation(stationId));
 }
 export async function getNozzles(stationId) {
-  return await queryDocs('nozzles', n => n.stationId === stationId);
+  return await queryDocs('nozzles', n => n.stationId === stationId, whereStation(stationId));
 }
-export async function getNozzlesForPump(pumpId) {
-  return await queryDocs('nozzles', n => n.pumpId === pumpId);
+export async function getNozzlesForPump(pumpId, stationId) {
+  return await queryDocs('nozzles', n => n.pumpId === pumpId, whereStation(stationId));
 }
 export async function getNozzleById(id) { return await getDocById('nozzles', id); }
 
@@ -53,7 +53,11 @@ export async function deletePump(id) {
   if (!pump) throw new Error('Pump not found');
   
   // Check active shifts using this pump
-  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  const activeShifts = await queryDocs(
+    'shifts',
+    s => s.stationId === pump.stationId && s.status === 'ACTIVE',
+    whereStation(pump.stationId),
+  );
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n => n.pumpId === id)) {
       throw new Error(`Cannot delete: Pump is busy — ${sh.employeeName} is working on it (active shift). Wait until shift ends.`);
@@ -61,7 +65,7 @@ export async function deletePump(id) {
   }
 
   // Check nozzles
-  const pumpNozzles = await getNozzlesForPump(id);
+  const pumpNozzles = await getNozzlesForPump(id, pump.stationId);
   if (pumpNozzles.length > 0) {
     // Check if any nozzle has active shift (already checked above, but double)
     // Allow deletion but also delete its nozzles gracefully if not in active shift
@@ -86,7 +90,11 @@ export async function deleteNozzle(id) {
   if (!nozzle) throw new Error('Nozzle not found');
 
   // Check active shifts
-  const activeShifts = await queryDocs('shifts', s => s.status === 'ACTIVE');
+  const activeShifts = await queryDocs(
+    'shifts',
+    s => s.stationId === nozzle.stationId && s.status === 'ACTIVE',
+    whereStation(nozzle.stationId),
+  );
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n => n.nozzleId === id)) {
       throw new Error(`Cannot delete: Nozzle is in active shift by ${sh.employeeName}. Wait until shift ends.`);
