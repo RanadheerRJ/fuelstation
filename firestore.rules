@@ -49,10 +49,18 @@ service cloud.firestore {
       return hasRole('attendant');
     }
 
+    // Station membership for NON-OWNER roles only.
+    //
+    // The stationIds array is an assignment hint maintained by administrators.
+    // It must never confer station access to an `owner`: ownership is proven
+    // solely by stations/{id}.ownerId. Otherwise a polluted or stale
+    // stationIds entry would let one owner reach another owner's tenant.
     function hasStationAssignment(stationId) {
+      let user = getUserData();
       return isActiveUser()
-        && getUserData().stationIds is list
-        && stationId in getUserData().stationIds;
+        && user.role != 'owner'
+        && user.stationIds is list
+        && stationId in user.stationIds;
     }
 
     function ownsStation(stationId) {
@@ -67,7 +75,9 @@ service cloud.firestore {
         && user.status == 'active'
         && (
           user.role == 'super_admin'
-          || (user.stationIds is list && stationId in user.stationIds)
+          || (user.role != 'owner'
+            && user.stationIds is list
+            && stationId in user.stationIds)
           || (user.role == 'owner'
             && exists(/databases/$(database)/documents/stations/$(stationId))
             && get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid)
@@ -81,7 +91,9 @@ service cloud.firestore {
         && user.role in ['super_admin', 'owner', 'manager', 'admin']
         && (
           user.role == 'super_admin'
-          || (user.stationIds is list && stationId in user.stationIds)
+          || (user.role != 'owner'
+            && user.stationIds is list
+            && stationId in user.stationIds)
           || (user.role == 'owner'
             && exists(/databases/$(database)/documents/stations/$(stationId))
             && get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid)

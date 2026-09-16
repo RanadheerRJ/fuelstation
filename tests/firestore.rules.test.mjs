@@ -34,7 +34,12 @@ const IDS = {
   attendantA2: 'attendant-a2',
   attendantB: 'attendant-b',
   inactiveA: 'inactive-a',
+  // Owner of STATION_C whose profile.stationIds has been polluted with
+  // STATION_B (an unowned tenant) to emulate a stale or forged assignment.
+  ownerPolluted: 'owner-polluted',
 };
+
+const STATION_C = 'station-c';
 
 let testEnv;
 
@@ -159,9 +164,12 @@ async function seedDatabase() {
     put(`users/${IDS.attendantA2}`, profile('Attendant A2', '9000000007', 'attendant', [STATION_A]));
     put(`users/${IDS.attendantB}`, profile('Attendant B', '9000000008', 'attendant', [STATION_B]));
     put(`users/${IDS.inactiveA}`, profile('Inactive A', '9000000009', 'manager', [STATION_A], 'inactive'));
+    // Owns STATION_C only, but carries STATION_B in stationIds.
+    put(`users/${IDS.ownerPolluted}`, profile('Owner Polluted', '9000000010', 'owner', [STATION_C, STATION_B]));
 
     put(`stations/${STATION_A}`, station('Station A', IDS.ownerA));
     put(`stations/${STATION_B}`, station('Station B', IDS.ownerB));
+    put(`stations/${STATION_C}`, station('Station C', IDS.ownerPolluted));
 
     put('pumps/pump-a', pump(STATION_A, IDS.ownerA));
     put('pumps/pump-b', pump(STATION_B, IDS.ownerB));
@@ -367,6 +375,113 @@ describe('authentication and station isolation', () => {
   test('prevents client station deletion', async () => {
     await assertFails(deleteDoc(doc(dbFor(IDS.ownerA), 'stations', STATION_A)));
     await assertFails(deleteDoc(doc(dbFor(IDS.superAdmin), 'stations', STATION_A)));
+  });
+});
+
+// SEV-1 cross-tenant isolation regressions. Each case below maps to a
+// reported way one station owner could reach another owner's data.
+describe('cross-tenant station isolation (SEV-1 regressions)', () => {
+  test('owner A cannot read station B document', async () => {
+    await assertFails(getDoc(doc(dbFor(IDS.ownerA), 'stations', STATION_B)));
+    await assertFails(getDoc(doc(dbFor(IDS.ownerB), 'stations', STATION_A)));
+  });
+
+  test('owner A cannot read any station B operational resource', async () => {
+    for (const [name, foreignId] of [
+      ['pumps', 'pump-b'],
+      ['nozzles', 'nozzle-b'],
+      ['prices', 'price-b-active'],
+      ['tankStocks', 'tank-b'],
+      ['shifts', 'active-b'],
+      ['transactions', 'expense-b'],
+    ]) {
+      await assertFails(getDoc(doc(dbFor(IDS.ownerA), name, foreignId)));
+    }
+  });
+
+  test('owner A cannot query station B collections', async () => {
+    for (const name of ['pumps', 'nozzles', 'prices', 'tankStocks', 'shifts', 'transactions', 'notes']) {
+      await assertFails(getDocs(query(
+        collection(dbFor(IDS.ownerA), name),
+        where('stationId', '==', STATION_B),
+      )));
+    }
+  });
+
+  test('owner A cannot write into station B', async () => {
+    await assertFails(setDoc(doc(dbFor(IDS.ownerA), 'pumps', 'intruder-pump'), pump(STATION_B, IDS.ownerA)));
+    await assertFails(updateDoc(doc(dbFor(IDS.ownerA), 'pumps', 'pump-b'), { name: 'Hijacked' }));
+    await assertFails(deleteDoc(doc(dbFor(IDS.ownerA), 'pumps', 'pump-b')));
+    await assertFails(updateDoc(doc(dbFor(IDS.ownerA), 'stations', STATION_B), { name: 'Hijacked' }));
+  });
+
+  // The core reported defect: a polluted stationIds array must not be
+  // accepted as proof of station ownership.
+  test('owner with polluted stationIds still cannot reach the unowned station', async () => {
+    const polluted = dbFor(IDS.ownerPolluted);
+
+    // Owns STATION_C, so that tenant stays reachable.
+    await assertSucceeds(getDoc(doc(polluted, 'stations', STATION_C)));
+
+    // STATION_B sits in stationIds but is owned by ownerB - deny everything.
+    await assertFails(getDoc(doc(polluted, 'stations', STATION_B)));
+    await assertFails(getDoc(doc(polluted, 'pumps', 'pump-b')));
+    await assertFails(getDoc(doc(polluted, 'nozzles', 'nozzle-b')));
+    await assertFails(getDoc(doc(polluted, 'prices', 'price-b-active')));
+    await assertFails(getDoc(doc(polluted, 'tankStocks', 'tank-b')));
+    await assertFails(getDoc(doc(polluted, 'shifts', 'active-b')));
+    await assertFails(getDoc(doc(polluted, 'transactions', 'expense-b')));
+  });
+
+  test('polluted owner cannot query or mutate the unowned station', async () => {
+    const polluted = dbFor(IDS.ownerPolluted);
+    await assertFails(getDocs(query(
+      collection(polluted, 'pumps'),
+      where('stationId', '==', STATION_B),
+    )));
+    await assertFails(setDoc(doc(polluted, 'pumps', 'polluted-pump'), pump(STATION_B, IDS.ownerPolluted)));
+    await assertFails(updateDoc(doc(polluted, 'stations', STATION_B), { name: 'Hijacked' }));
+  });
+
+  test('owner list queries never leak another owner stations', async () => {
+    const ownedOnly = query(
+      collection(dbFor(IDS.ownerPolluted), 'stations'),
+      where('ownerId', '==', IDS.ownerPolluted),
+    );
+    await assertSucceeds(getDocs(ownedOnly));
+    // Claiming another owner's id, or omitting the scope, must be rejected.
+    await assertFails(getDocs(query(
+      collection(dbFor(IDS.ownerPolluted), 'stations'),
+      where('ownerId', '==', IDS.ownerB),
+    )));
+    await assertFails(getDocs(collection(dbFor(IDS.ownerPolluted), 'stations')));
+  });
+
+  test('managers and attendants are confined to assigned stations', async () => {
+    await assertSucceeds(getDoc(doc(dbFor(IDS.managerA), 'stations', STATION_A)));
+    await assertFails(getDoc(doc(dbFor(IDS.managerA), 'stations', STATION_B)));
+    await assertFails(getDoc(doc(dbFor(IDS.managerA), 'pumps', 'pump-b')));
+    await assertFails(getDoc(doc(dbFor(IDS.managerB), 'pumps', 'pump-a')));
+
+    await assertSucceeds(getDoc(doc(dbFor(IDS.attendantA), 'stations', STATION_A)));
+    await assertFails(getDoc(doc(dbFor(IDS.attendantA), 'stations', STATION_B)));
+    await assertFails(getDoc(doc(dbFor(IDS.attendantB), 'pumps', 'pump-a')));
+  });
+
+  test('cross-station employee directory reads stay denied', async () => {
+    await assertFails(getDoc(doc(dbFor(IDS.ownerA), 'users', IDS.attendantB)));
+    await assertFails(getDoc(doc(dbFor(IDS.managerA), 'users', IDS.attendantB)));
+    await assertFails(getDoc(doc(dbFor(IDS.ownerPolluted), 'users', IDS.attendantB)));
+  });
+
+  test('super admin retains unchanged platform-wide access', async () => {
+    const su = dbFor(IDS.superAdmin);
+    await assertSucceeds(getDoc(doc(su, 'stations', STATION_A)));
+    await assertSucceeds(getDoc(doc(su, 'stations', STATION_B)));
+    await assertSucceeds(getDoc(doc(su, 'stations', STATION_C)));
+    await assertSucceeds(getDocs(collection(su, 'stations')));
+    await assertSucceeds(getDoc(doc(su, 'pumps', 'pump-a')));
+    await assertSucceeds(getDoc(doc(su, 'pumps', 'pump-b')));
   });
 });
 
