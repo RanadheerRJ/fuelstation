@@ -595,12 +595,15 @@ describe('shift state machine and approved immutability', () => {
     }));
   });
 
-  test('reviewer approves or rejects another employee pending shift', async () => {
+  test('reviewer approves another employee pending shift', async () => {
     await assertSucceeds(updateDoc(doc(dbFor(IDS.managerA), 'shifts', 'pending-a'), {
       status: 'APPROVED',
       approvedBy: IDS.managerA,
       approvedAt: '2026-09-16T03:00:00.000Z',
     }));
+  });
+
+  test('reviewer rejects another employee pending shift', async () => {
     await assertSucceeds(updateDoc(doc(dbFor(IDS.ownerA), 'shifts', 'pending-a'), {
       status: 'REJECTED',
       rejectedBy: IDS.ownerA,
