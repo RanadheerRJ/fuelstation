@@ -35,8 +35,13 @@ export async function pricesView({ root }) {
 
   root.innerHTML = `
     <div class="container">
-      <h1 class="page-title">Fuel Prices</h1>
-      <p class="page-sub">${station.name} • Live prices • ${isOwner ? 'Owner • Full visibility' : 'Manager • Can edit'}</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div>
+          <h1 class="page-title">Fuel Prices</h1>
+          <p class="page-sub">${station.name} • Live prices • ${isOwner ? 'Owner • Full visibility' : 'Manager • Can edit'}</p>
+        </div>
+        ${canManage ? `<button class="neu-btn neu-btn--small" onclick="location.hash='#/siteground'">🛢️ Update Stock</button>` : ''}
+      </div>
       <div class="grid" style="margin-top:16px;gap:12px">
         ${['Petrol','Diesel','Premium Petrol','CNG'].map(ft=>{
           const p = activePrices[ft];

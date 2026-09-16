@@ -73,6 +73,12 @@ export function formatCurrency(n) {
 export function formatLiters(n) {
   return (Number(n)||0).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' L';
 }
+// Ground/tank stock is displayed and entered in KL (kilolitres). 1 KL = 1000 L.
+// Internally everything stays in liters; this is a display-layer helper only.
+export function formatKL(liters, decimals = 2) {
+  const kl = (Number(liters) || 0) / 1000;
+  return kl.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + ' KL';
+}
 export function formatDate(d) {
   const date = d instanceof Date ? d : new Date(d);
   return date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });

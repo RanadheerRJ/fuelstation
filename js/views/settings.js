@@ -33,6 +33,7 @@ export async function settingsView({ root }) {
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/pumps'">🔧 Pumps & Nozzles</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/employees'">👥 Employees</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/prices'">💰 Fuel Prices</button>
+          <button class="neu-btn neu-btn--small" onclick="location.hash='#/siteground'">🛢️ SiteGround • Tank Stock</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/shifts'">🧾 Shifts</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/shifts/start'">▶️ Start Shift</button>
           <button class="neu-btn neu-btn--small" onclick="location.hash='#/reports'">📊 Reports</button>
