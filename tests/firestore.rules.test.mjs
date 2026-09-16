@@ -370,7 +370,7 @@ describe('user profile security and role escalation', () => {
   test('station managers can query only their station directory', async () => {
     const stationUsers = query(
       collection(dbFor(IDS.managerA), 'users'),
-      where('stationIds', 'array-contains-any', [STATION_A]),
+      where('stationIds', '==', [STATION_A]),
     );
     await assertSucceeds(getDocs(stationUsers));
     await assertFails(getDoc(doc(dbFor(IDS.managerA), 'users', IDS.attendantB)));
