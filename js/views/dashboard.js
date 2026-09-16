@@ -2,6 +2,8 @@ import { getState, setState } from '../state.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
 import { formatCurrency, formatLiters } from '../services/calc.js';
+import { getActivePrices } from '../services/prices.js';
+import { getTankStocks, setTankStock, availableStock, stockLevel, LEVEL_COLORS } from '../services/tankStock.js';
 
 export async function dashboardView({ root }) {
   const { user, currentStationId } = getState();
@@ -327,6 +329,51 @@ export async function dashboardView({ root }) {
   }
 
   // Owner / Manager Banking Elegant Dashboard
+  // ---- Rates (MS/HSD) + Ground stock for hero card ----
+  let activePrices = {};
+  try { activePrices = await getActivePrices(activeStation.id); } catch {}
+  const findPrice = (bucket) => {
+    const entry = Object.entries(activePrices).find(([ft]) => {
+      const f = ft.toLowerCase();
+      return bucket === 'ms' ? (f.includes('petrol') && !f.includes('premium')) || f === 'ms'
+                             : f.includes('diesel') || f === 'hsd';
+    });
+    return entry ? entry[1].price : null;
+  };
+  const msRate = findPrice('ms');
+  const hsdRate = findPrice('hsd');
+
+  let tankStocks = {};
+  try { tankStocks = await getTankStocks(activeStation.id); } catch {}
+  const findStockDoc = (bucket) => {
+    const entry = Object.entries(tankStocks).find(([ft]) => {
+      const f = ft.toLowerCase();
+      return bucket === 'ms' ? f.includes('petrol') || f === 'ms' : f.includes('diesel') || f === 'hsd';
+    });
+    return entry ? entry[1] : null;
+  };
+  const msStockDoc = findStockDoc('ms');
+  const hsdStockDoc = findStockDoc('hsd');
+  const msAvail = availableStock(msStockDoc, allShifts, 'ms');
+  const hsdAvail = availableStock(hsdStockDoc, allShifts, 'hsd');
+  const msLvl = stockLevel(msAvail, msStockDoc?.capacityLiters);
+  const hsdLvl = stockLevel(hsdAvail, hsdStockDoc?.capacityLiters);
+
+  const stockCell = (label, sub, rate, avail, lvl, stockDoc) => {
+    const c = LEVEL_COLORS[lvl.level];
+    const pctBar = lvl.pct != null ? Math.max(2, Math.min(100, lvl.pct)) : null;
+    return `
+      <div style="flex:1;background:${c.badgeBg};border:1px solid ${c.border};border-radius:12px;padding:10px;text-align:center">
+        <div style="font-size:10px;opacity:0.7;letter-spacing:0.8px;font-weight:700">${label} <span style="opacity:0.6;font-weight:500">• ${sub}</span></div>
+        <div style="font-size:17px;font-weight:800;margin-top:4px">${rate != null ? formatCurrency(rate)+'<span style="font-size:10px;opacity:0.6;font-weight:600">/L</span>' : '<span style="font-size:12px;opacity:0.6">Rate not set</span>'}</div>
+        <div style="margin-top:8px;font-size:9px;opacity:0.65;letter-spacing:0.5px">GROUND STOCK</div>
+        <div style="font-size:15px;font-weight:800;margin-top:2px;color:${c.fg}">${avail != null ? formatLiters(avail) : '—'}</div>
+        <div style="font-size:9px;margin-top:3px;color:${c.fg};font-weight:600">${avail != null ? c.label + (lvl.pct != null ? ' • ' + lvl.pct.toFixed(0) + '%' : '') : 'Tap ✏️ to set'}</div>
+        ${pctBar != null ? `<div style="margin-top:6px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pctBar}%;background:${c.fg};border-radius:2px"></div></div>` : ''}
+        ${stockDoc ? `<div style="font-size:8px;opacity:0.45;margin-top:5px">Dip ${formatLiters(stockDoc.baselineLiters)} on ${new Date(stockDoc.baselineTime).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} ${new Date(stockDoc.baselineTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} − sales` : ''}
+      </div>`;
+  };
+
   root.innerHTML = `
     <div class="container" style="max-width:520px;margin:0 auto;padding-bottom:110px">
       <!-- Header Banking -->
@@ -347,46 +394,15 @@ export async function dashboardView({ root }) {
         <div style="position:absolute;top:-40px;right:-40px;width:160px;height:160px;background:rgba(255,90,31,0.10);border-radius:50%"></div>
         <div style="position:absolute;bottom:-30px;left:-30px;width:120px;height:120px;background:rgba(82,196,26,0.07);border-radius:50%"></div>
         <div style="position:relative;z-index:1">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div>
-              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">TODAY'S NET SALES • WHOLE AMOUNT TO OWNER</div>
-              <div style="font-size:30px;font-weight:800;margin-top:6px;letter-spacing:-1px">${formatCurrency(totalSalesAll)}</div>
-              <div style="font-size:10px;opacity:0.5;margin-top:4px;display:flex;align-items:center;gap:6px">
-                <span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:6px">Gross ${formatCurrency(totalGrossAll)}</span>
-                <span style="color:#ff8c61">- Exp ${formatCurrency(totalExpAll)}</span>
-                <span style="color:#95de64">= Net</span>
-              </div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:10px;opacity:0.6;letter-spacing:1px">FUEL SOLD • TODAY</div>
-              <div style="margin-top:6px;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px 10px;border:1px solid rgba(255,255,255,0.12);min-width:140px">
-                <div style="display:flex;justify-content:space-between;gap:12px">
-                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">MS</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(msLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Petrol</div></div>
-                  <div style="width:1px;background:rgba(255,255,255,0.1)"></div>
-                  <div style="text-align:center"><div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">HSD</div><div style="font-weight:800;font-size:13px;margin-top:2px">${formatLiters(hsdLitersAll).replace(' L','')}</div><div style="font-size:8px;opacity:0.5">Diesel</div></div>
-                </div>
-                <div style="font-size:9px;opacity:0.5;margin-top:6px;text-align:center;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px">Total ${formatLiters(totalLitersAll)} • ${todayShiftsAll.length} shifts</div>
-              </div>
-            </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:10px;opacity:0.6;letter-spacing:1px">TODAY'S RATES & GROUND STOCK • ${activeStation.name.toUpperCase()}</div>
+            <button id="editGroundStock" style="min-height:32px;padding:0 12px;border-radius:10px;background:rgba(255,255,255,0.12);color:white;border:1px solid rgba(255,255,255,0.2);font-size:11px;font-weight:700;cursor:pointer">✏️ Update Stock</button>
           </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:20px">
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center;border:1px solid rgba(255,140,97,0.2)">
-              <div style="font-size:10px;opacity:0.6">TO RECEIVE</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px;color:#ff8c61">${formatCurrency(toHandoverToday)}</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">From staff • Net - Pay</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:10px;opacity:0.6">PAYMENTS</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px">${formatCurrency(totalPaymentsAll)}</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">UPI/Cash/Card</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.07);border-radius:12px;padding:12px;text-align:center">
-              <div style="font-size:10px;opacity:0.6">ACTIVE</div>
-              <div style="font-size:15px;font-weight:700;margin-top:2px;color:#95de64">${activeShifts.length} live</div>
-              <div style="font-size:9px;opacity:0.5;margin-top:2px">${pendingShifts.length} pending</div>
-            </div>
+          <div style="display:flex;gap:10px;margin-top:12px">
+            ${stockCell('MS', 'Petrol', msRate, msAvail, msLvl, msStockDoc)}
+            ${stockCell('HSD', 'Diesel', hsdRate, hsdAvail, hsdLvl, hsdStockDoc)}
           </div>
+          <div style="font-size:9px;opacity:0.5;margin-top:10px;text-align:center">Stock auto-balances: dip reading − liters sold since entry • 🟢 ≥50% 🟡 25–50% 🔴 <25%${(!msStockDoc?.capacityLiters && !hsdStockDoc?.capacityLiters) ? ' (of tank capacity — or L thresholds if capacity not set)' : ''}</div>
         </div>
       </div>
 
@@ -554,10 +570,71 @@ export async function dashboardView({ root }) {
         <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Gross - Expenses = Net = whole amount to owner • To Handover = Net - Payments • Pumps live status • Employee performance by liters</div>
       </div>
     </div>
+    <div id="dashModalRoot"></div>
     <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style>
   `;
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });
+
+  // Ground stock modal (owner/manager/admin)
+  const gsBtn = root.querySelector('#editGroundStock');
+  if (gsBtn) gsBtn.addEventListener('click', () => {
+    const modalRoot = root.querySelector('#dashModalRoot');
+    modalRoot.innerHTML = `
+      <div class="modal-backdrop" id="gsBackdrop">
+        <div class="modal" style="max-width:420px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="font-weight:800">⛽ Update Ground Stock</h3>
+            <button id="gsClose" class="neu-btn" style="min-height:36px;min-width:36px;border-radius:50%">✕</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">Enter today's dip reading. Available stock auto-reduces as fuel is sold. Capacity is optional — it powers the % level colors.</p>
+
+          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:12px">
+            <div style="font-weight:700;font-size:13px">MS • Petrol</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+              <div><label style="font-size:10px;color:var(--text-secondary)">Ground stock (L)</label><input id="gsMs" type="number" inputmode="decimal" min="0" step="0.01" value="${msStockDoc? msStockDoc.baselineLiters : ''}" placeholder="e.g. 8500" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
+              <div><label style="font-size:10px;color:var(--text-secondary)">Tank capacity (L)</label><input id="gsMsCap" type="number" inputmode="decimal" min="0" step="1" value="${msStockDoc?.capacityLiters ?? ''}" placeholder="e.g. 20000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px">
+            <div style="font-weight:700;font-size:13px">HSD • Diesel</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+              <div><label style="font-size:10px;color:var(--text-secondary)">Ground stock (L)</label><input id="gsHsd" type="number" inputmode="decimal" min="0" step="0.01" value="${hsdStockDoc? hsdStockDoc.baselineLiters : ''}" placeholder="e.g. 12000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
+              <div><label style="font-size:10px;color:var(--text-secondary)">Tank capacity (L)</label><input id="gsHsdCap" type="number" inputmode="decimal" min="0" step="1" value="${hsdStockDoc?.capacityLiters ?? ''}" placeholder="e.g. 20000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
+            </div>
+          </div>
+
+          <button id="gsSave" style="margin-top:14px;width:100%;min-height:50px;border-radius:12px;background:#1a2535;color:white;border:none;font-weight:700;font-size:14px">Save Ground Stock</button>
+          <p style="font-size:10px;color:var(--text-secondary);margin-top:8px;text-align:center">Leave a fuel blank to keep it unchanged • Saved as new dip baseline from now</p>
+        </div>
+      </div>
+    `;
+    const close = () => { modalRoot.innerHTML = ''; };
+    modalRoot.querySelector('#gsBackdrop').addEventListener('click', e => { if (e.target.id === 'gsBackdrop') close(); });
+    modalRoot.querySelector('#gsClose').addEventListener('click', close);
+    modalRoot.querySelector('#gsSave').addEventListener('click', async () => {
+      const msVal = modalRoot.querySelector('#gsMs').value;
+      const msCap = modalRoot.querySelector('#gsMsCap').value;
+      const hsdVal = modalRoot.querySelector('#gsHsd').value;
+      const hsdCap = modalRoot.querySelector('#gsHsdCap').value;
+      if (msVal === '' && hsdVal === '') { alert('Enter ground stock for at least one fuel'); return; }
+      if ((msVal !== '' && Number(msVal) < 0) || (hsdVal !== '' && Number(hsdVal) < 0)) { alert('Stock cannot be negative'); return; }
+      const btn = modalRoot.querySelector('#gsSave');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const msFuelKey = (msStockDoc?.fuelType) || 'Petrol';
+        const hsdFuelKey = (hsdStockDoc?.fuelType) || 'Diesel';
+        if (msVal !== '') await setTankStock(activeStation.id, msFuelKey, msVal, msCap);
+        if (hsdVal !== '') await setTankStock(activeStation.id, hsdFuelKey, hsdVal, hsdCap);
+        close();
+        dashboardView({ root });
+      } catch (e) {
+        alert(e.message || 'Failed to save');
+        btn.disabled = false; btn.textContent = 'Save Ground Stock';
+      }
+    });
+  });
 }
 
 function getGreeting(){
