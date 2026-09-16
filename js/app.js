@@ -9,6 +9,7 @@ import { teamDirectoryView } from './views/teamDirectory.js';
 import { pumpsView } from './views/pumps.js';
 import { employeesView } from './views/employees.js';
 import { pricesView } from './views/prices.js';
+import { siteGroundView } from './views/siteGround.js';
 import { shiftsListView, startShiftView, shiftDetailView, closeShiftView } from './views/shifts.js';
 import { reportsView } from './views/reports.js';
 import { settingsView } from './views/settings.js';
@@ -39,6 +40,7 @@ async function bootstrap() {
   registerRoute('/pumps', pumpsView);
   registerRoute('/employees', employeesView);
   registerRoute('/prices', pricesView);
+  registerRoute('/siteground', siteGroundView);
   registerRoute('/shifts', shiftsListView);
   registerRoute('/shifts/start', startShiftView);
   registerRoute('/shifts/:id', shiftDetailView);

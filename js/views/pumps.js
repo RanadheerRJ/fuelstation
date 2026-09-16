@@ -48,7 +48,7 @@ export async function pumpsView({ root }) {
           <p class="page-sub">${station.name} • ${pumps.length} pumps • <span style="color:#52c41a">${availableCount} free</span> • <span style="color:#ff4d4f">${occupiedCount} busy</span></p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${canManage ? `<button id="addPumpBtn" class="neu-btn neu-btn--small neu-btn--primary">+ Pump</button><button id="addNozzleBtn" class="neu-btn neu-btn--small">+ Nozzle</button>` : ''}
+          ${canManage ? `<button id="addPumpBtn" class="neu-btn neu-btn--small neu-btn--primary">+ Pump</button><button id="addNozzleBtn" class="neu-btn neu-btn--small">+ Nozzle</button><button id="siteGroundBtn" class="neu-btn neu-btn--small">🛢️ Stock</button>` : ''}
         </div>
       </div>
 
@@ -241,6 +241,7 @@ export async function pumpsView({ root }) {
 
   root.querySelector('#addPumpBtn')?.addEventListener('click', ()=> openPumpModal());
   root.querySelector('#addNozzleBtn')?.addEventListener('click', ()=> openNozzleModal());
+  root.querySelector('#siteGroundBtn')?.addEventListener('click', ()=>{ location.hash = '#/siteground'; });
 
   function openPumpDetailModal(pump, pNozzles, occ) {
     const isFree = !occ.occupied;

@@ -1,9 +1,9 @@
 import { getState, setState } from '../state.js';
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts, getActiveShiftForUser } from '../services/shifts.js';
-import { formatCurrency, formatLiters } from '../services/calc.js';
+import { formatCurrency, formatLiters, formatKL } from '../services/calc.js';
 import { getActivePrices } from '../services/prices.js';
-import { getTankStocks, setTankStock, availableStock, stockLevel, LEVEL_COLORS } from '../services/tankStock.js';
+import { getTankStocks, availableStock, stockLevel, LEVEL_COLORS } from '../services/tankStock.js';
 
 export async function dashboardView({ root }) {
   const { user, currentStationId } = getState();
@@ -201,7 +201,7 @@ export async function dashboardView({ root }) {
         </div>
 
         <!-- Hero My Performance Banking -->
-        <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden">
+        <div id="groundStockBoard" title="Open SiteGround to manage tank stock" style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden;cursor:pointer">
           <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:rgba(255,90,31,0.12);border-radius:50%"></div>
           <div style="position:absolute;bottom:-20px;left:-20px;width:100px;height:100px;background:rgba(82,196,26,0.08);border-radius:50%"></div>
           <div style="position:relative;z-index:1">
@@ -359,18 +359,55 @@ export async function dashboardView({ root }) {
   const msLvl = stockLevel(msAvail, msStockDoc?.capacityLiters);
   const hsdLvl = stockLevel(hsdAvail, hsdStockDoc?.capacityLiters);
 
-  const stockCell = (label, sub, rate, avail, lvl, stockDoc) => {
-    const c = LEVEL_COLORS[lvl.level];
-    const pctBar = lvl.pct != null ? Math.max(2, Math.min(100, lvl.pct)) : null;
+  // Mini cylinder / barrel gauge that fills to the current stock level.
+  // Read-only display board - stock is entered on the SiteGround page.
+  const miniTank = (bucket, pct, color) => {
+    const known = pct != null;
+    const fill = known ? Math.max(0, Math.min(100, pct)) : 0;
+    const TOP = 6, BOT = 60, W = 36, X = 3, RY = 5;
+    const surfaceY = BOT - ((BOT - TOP) * fill / 100);
+    const uid = `mini-${bucket}`;
     return `
-      <div style="flex:1;background:${c.badgeBg};border:1px solid ${c.border};border-radius:12px;padding:10px;text-align:center">
-        <div style="font-size:10px;opacity:0.7;letter-spacing:0.8px;font-weight:700">${label} <span style="opacity:0.6;font-weight:500">• ${sub}</span></div>
-        <div style="font-size:17px;font-weight:800;margin-top:4px">${rate != null ? formatCurrency(rate)+'<span style="font-size:10px;opacity:0.6;font-weight:600">/L</span>' : '<span style="font-size:12px;opacity:0.6">Rate not set</span>'}</div>
-        <div style="margin-top:8px;font-size:9px;opacity:0.65;letter-spacing:0.5px">GROUND STOCK</div>
-        <div style="font-size:15px;font-weight:800;margin-top:2px;color:${c.fg}">${avail != null ? formatLiters(avail) : '—'}</div>
-        <div style="font-size:9px;margin-top:3px;color:${c.fg};font-weight:600">${avail != null ? c.label + (lvl.pct != null ? ' • ' + lvl.pct.toFixed(0) + '%' : '') : 'Tap ✏️ to set'}</div>
-        ${pctBar != null ? `<div style="margin-top:6px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pctBar}%;background:${c.fg};border-radius:2px"></div></div>` : ''}
-        ${stockDoc ? `<div style="font-size:8px;opacity:0.45;margin-top:5px">Dip ${formatLiters(stockDoc.baselineLiters)} on ${new Date(stockDoc.baselineTime).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} ${new Date(stockDoc.baselineTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} − sales` : ''}
+      <svg viewBox="0 0 42 70" width="34" height="56" style="flex:none" aria-hidden="true">
+        <defs>
+          <clipPath id="${uid}-clip">
+            <path d="M ${X} ${TOP} a ${W/2} ${RY} 0 0 1 ${W} 0 L ${X+W} ${BOT} a ${W/2} ${RY} 0 0 1 ${-W} 0 Z" />
+          </clipPath>
+        </defs>
+        <path d="M ${X} ${TOP} a ${W/2} ${RY} 0 0 1 ${W} 0 L ${X+W} ${BOT} a ${W/2} ${RY} 0 0 1 ${-W} 0 Z"
+              fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.25)" stroke-width="1" />
+        <g clip-path="url(#${uid}-clip)">
+          ${known && fill > 0 ? `<rect x="${X-4}" y="${surfaceY}" width="${W+8}" height="${BOT-surfaceY+10}" fill="${color}" opacity="0.85" />
+          <ellipse cx="${X+W/2}" cy="${surfaceY}" rx="${W/2}" ry="${RY-1}" fill="${color}" />` : ''}
+          <line x1="${X}" y1="${BOT-(BOT-TOP)*0.5}" x2="${X+W}" y2="${BOT-(BOT-TOP)*0.5}" stroke="rgba(255,255,255,0.3)" stroke-width="0.7" stroke-dasharray="2 3" />
+          <line x1="${X}" y1="${BOT-(BOT-TOP)*0.25}" x2="${X+W}" y2="${BOT-(BOT-TOP)*0.25}" stroke="rgba(255,255,255,0.22)" stroke-width="0.7" stroke-dasharray="2 3" />
+          <line x1="${X}" y1="${BOT-(BOT-TOP)*0.75}" x2="${X+W}" y2="${BOT-(BOT-TOP)*0.75}" stroke="rgba(255,255,255,0.22)" stroke-width="0.7" stroke-dasharray="2 3" />
+        </g>
+        <ellipse cx="${X+W/2}" cy="${TOP}" rx="${W/2}" ry="${RY}" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
+        <path d="M ${X} ${BOT} a ${W/2} ${RY} 0 0 0 ${W} 0" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
+        <text x="${X+W/2}" y="${BOT+12}" text-anchor="middle" font-size="9" font-weight="800" fill="${color}">${known ? fill.toFixed(0)+'%' : '—'}</text>
+      </svg>`;
+  };
+
+  const stockCell = (bucket, label, sub, rate, avail, lvl, stockDoc) => {
+    const c = LEVEL_COLORS[lvl.level];
+    const pct = lvl.pct != null ? Math.min(100, lvl.pct) : null;
+    return `
+      <div style="flex:1;background:${c.badgeBg};border:1px solid ${c.border};border-radius:14px;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:11px;font-weight:800;letter-spacing:0.6px">${label}<span style="opacity:0.55;font-weight:500"> • ${sub}</span></div>
+          <span style="font-size:8px;font-weight:800;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.25);color:${c.fg};border:1px solid ${c.border}">${c.label.toUpperCase()}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+          ${miniTank(bucket, pct, c.fg)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:9px;opacity:0.6;letter-spacing:0.5px">RATE</div>
+            <div style="font-size:15px;font-weight:800">${rate != null ? formatCurrency(rate)+'<span style="font-size:9px;opacity:0.6;font-weight:600">/L</span>' : '<span style="font-size:11px;opacity:0.6">Not set</span>'}</div>
+            <div style="font-size:9px;opacity:0.6;letter-spacing:0.5px;margin-top:6px">GROUND STOCK</div>
+            <div style="font-size:15px;font-weight:800;color:${c.fg}">${avail != null ? formatKL(avail) : '—'}</div>
+            <div style="font-size:8px;opacity:0.5;margin-top:2px">${stockDoc?.capacityLiters ? `of ${formatKL(stockDoc.capacityLiters)} capacity` : (avail != null ? 'capacity not set' : 'no dip reading')}</div>
+          </div>
+        </div>
       </div>`;
   };
 
@@ -390,19 +427,24 @@ export async function dashboardView({ root }) {
       </div>
 
       <!-- Hero Banking - Whole view of pump -->
-      <div style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden">
+      <div id="groundStockBoard" title="Open SiteGround to manage tank stock" style="background:linear-gradient(135deg,#1a2535 0%,#2c3e50 100%);border-radius:20px;padding:20px;color:white;margin-top:16px;position:relative;overflow:hidden;cursor:pointer">
         <div style="position:absolute;top:-40px;right:-40px;width:160px;height:160px;background:rgba(255,90,31,0.10);border-radius:50%"></div>
         <div style="position:absolute;bottom:-30px;left:-30px;width:120px;height:120px;background:rgba(82,196,26,0.07);border-radius:50%"></div>
         <div style="position:relative;z-index:1">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div style="font-size:10px;opacity:0.6;letter-spacing:1px">TODAY'S RATES & GROUND STOCK • ${activeStation.name.toUpperCase()}</div>
-            <button id="editGroundStock" style="min-height:32px;padding:0 12px;border-radius:10px;background:rgba(255,255,255,0.12);color:white;border:1px solid rgba(255,255,255,0.2);font-size:11px;font-weight:700;cursor:pointer">✏️ Update Stock</button>
+            <span style="font-size:10px;opacity:0.55;font-weight:600">🛢️ SiteGround →</span>
           </div>
           <div style="display:flex;gap:10px;margin-top:12px">
-            ${stockCell('MS', 'Petrol', msRate, msAvail, msLvl, msStockDoc)}
-            ${stockCell('HSD', 'Diesel', hsdRate, hsdAvail, hsdLvl, hsdStockDoc)}
+            ${stockCell('ms', 'MS', 'Petrol', msRate, msAvail, msLvl, msStockDoc)}
+            ${stockCell('hsd', 'HSD', 'Diesel', hsdRate, hsdAvail, hsdLvl, hsdStockDoc)}
           </div>
-          <div style="font-size:9px;opacity:0.5;margin-top:10px;text-align:center">Stock auto-balances: dip reading − liters sold since entry • 🟢 ≥50% 🟡 25–50% 🔴 <25%${(!msStockDoc?.capacityLiters && !hsdStockDoc?.capacityLiters) ? ' (of tank capacity — or L thresholds if capacity not set)' : ''}</div>
+          <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:12px;font-size:9px;opacity:0.65">
+            <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:${LEVEL_COLORS.ok.fg};display:inline-block"></span>Healthy ≥50%</span>
+            <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:${LEVEL_COLORS.low.fg};display:inline-block"></span>Low 25–50%</span>
+            <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:${LEVEL_COLORS.critical.fg};display:inline-block"></span>Refill &lt;25%</span>
+          </div>
+          <div style="font-size:9px;opacity:0.45;margin-top:8px;text-align:center">Auto-balancing: dip reading − litres sold since entry • tap to manage in SiteGround</div>
         </div>
       </div>
 
@@ -562,6 +604,7 @@ export async function dashboardView({ root }) {
         <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/reports'"><span style="font-size:22px">📊</span>Reports</button>
         <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/employees'"><span style="font-size:22px">👥</span>Team • ${employees.length}</button>
         <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/prices'"><span style="font-size:22px">💰</span>Prices</button>
+        <button style="min-height:64px;border-radius:14px;background:white;border:1px solid var(--border);font-weight:600;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/siteground'"><span style="font-size:22px">🛢️</span>Stock • Tanks</button>
         <button style="min-height:64px;border-radius:14px;background:#1a2535;color:white;border:none;font-weight:700;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/shifts/start'"><span style="font-size:22px">▶️</span>Start Shift</button>
       </div>
 
@@ -570,71 +613,14 @@ export async function dashboardView({ root }) {
         <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Gross - Expenses = Net = whole amount to owner • To Handover = Net - Payments • Pumps live status • Employee performance by liters</div>
       </div>
     </div>
-    <div id="dashModalRoot"></div>
     <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style>
   `;
   const switchEl = root.querySelector('#stationSwitch');
   if (switchEl) switchEl.addEventListener('change', e=>{ setState({ currentStationId: e.target.value }); dashboardView({ root }); });
 
-  // Ground stock modal (owner/manager/admin)
-  const gsBtn = root.querySelector('#editGroundStock');
-  if (gsBtn) gsBtn.addEventListener('click', () => {
-    const modalRoot = root.querySelector('#dashModalRoot');
-    modalRoot.innerHTML = `
-      <div class="modal-backdrop" id="gsBackdrop">
-        <div class="modal" style="max-width:420px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <h3 style="font-weight:800">⛽ Update Ground Stock</h3>
-            <button id="gsClose" class="neu-btn" style="min-height:36px;min-width:36px;border-radius:50%">✕</button>
-          </div>
-          <p style="font-size:11px;color:var(--text-secondary);margin-top:6px">Enter today's dip reading. Available stock auto-reduces as fuel is sold. Capacity is optional — it powers the % level colors.</p>
-
-          <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:12px">
-            <div style="font-weight:700;font-size:13px">MS • Petrol</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-              <div><label style="font-size:10px;color:var(--text-secondary)">Ground stock (L)</label><input id="gsMs" type="number" inputmode="decimal" min="0" step="0.01" value="${msStockDoc? msStockDoc.baselineLiters : ''}" placeholder="e.g. 8500" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
-              <div><label style="font-size:10px;color:var(--text-secondary)">Tank capacity (L)</label><input id="gsMsCap" type="number" inputmode="decimal" min="0" step="1" value="${msStockDoc?.capacityLiters ?? ''}" placeholder="e.g. 20000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
-            </div>
-          </div>
-
-          <div style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px">
-            <div style="font-weight:700;font-size:13px">HSD • Diesel</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-              <div><label style="font-size:10px;color:var(--text-secondary)">Ground stock (L)</label><input id="gsHsd" type="number" inputmode="decimal" min="0" step="0.01" value="${hsdStockDoc? hsdStockDoc.baselineLiters : ''}" placeholder="e.g. 12000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
-              <div><label style="font-size:10px;color:var(--text-secondary)">Tank capacity (L)</label><input id="gsHsdCap" type="number" inputmode="decimal" min="0" step="1" value="${hsdStockDoc?.capacityLiters ?? ''}" placeholder="e.g. 20000" style="width:100%;min-height:44px;border-radius:10px;border:1.5px solid var(--border);padding:0 10px;font-size:14px;font-weight:600;margin-top:4px" /></div>
-            </div>
-          </div>
-
-          <button id="gsSave" style="margin-top:14px;width:100%;min-height:50px;border-radius:12px;background:#1a2535;color:white;border:none;font-weight:700;font-size:14px">Save Ground Stock</button>
-          <p style="font-size:10px;color:var(--text-secondary);margin-top:8px;text-align:center">Leave a fuel blank to keep it unchanged • Saved as new dip baseline from now</p>
-        </div>
-      </div>
-    `;
-    const close = () => { modalRoot.innerHTML = ''; };
-    modalRoot.querySelector('#gsBackdrop').addEventListener('click', e => { if (e.target.id === 'gsBackdrop') close(); });
-    modalRoot.querySelector('#gsClose').addEventListener('click', close);
-    modalRoot.querySelector('#gsSave').addEventListener('click', async () => {
-      const msVal = modalRoot.querySelector('#gsMs').value;
-      const msCap = modalRoot.querySelector('#gsMsCap').value;
-      const hsdVal = modalRoot.querySelector('#gsHsd').value;
-      const hsdCap = modalRoot.querySelector('#gsHsdCap').value;
-      if (msVal === '' && hsdVal === '') { alert('Enter ground stock for at least one fuel'); return; }
-      if ((msVal !== '' && Number(msVal) < 0) || (hsdVal !== '' && Number(hsdVal) < 0)) { alert('Stock cannot be negative'); return; }
-      const btn = modalRoot.querySelector('#gsSave');
-      btn.disabled = true; btn.textContent = 'Saving…';
-      try {
-        const msFuelKey = (msStockDoc?.fuelType) || 'Petrol';
-        const hsdFuelKey = (hsdStockDoc?.fuelType) || 'Diesel';
-        if (msVal !== '') await setTankStock(activeStation.id, msFuelKey, msVal, msCap);
-        if (hsdVal !== '') await setTankStock(activeStation.id, hsdFuelKey, hsdVal, hsdCap);
-        close();
-        dashboardView({ root });
-      } catch (e) {
-        alert(e.message || 'Failed to save');
-        btn.disabled = false; btn.textContent = 'Save Ground Stock';
-      }
-    });
-  });
+  // Ground stock is managed on the SiteGround page - the board here is read-only
+  const boardEl = root.querySelector('#groundStockBoard');
+  if (boardEl) boardEl.addEventListener('click', () => { location.hash = '#/siteground'; });
 }
 
 function getGreeting(){

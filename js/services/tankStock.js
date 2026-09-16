@@ -1,7 +1,7 @@
 // Ground / Tank stock service
 // Owner inputs the measured (dip) ground stock per fuel.
 // Available stock is auto-balanced = baseline stock - liters sold since the entry.
-import { queryDocs, addDocTo, updateDocById, logAudit } from './firestoreService.js';
+import { queryDocs, addDocTo, updateDocById, deleteDocById, logAudit } from './firestoreService.js';
 import { getState } from '../state.js';
 
 // One doc per station+fuelType in collection 'tankStocks'
@@ -39,6 +39,17 @@ export async function setTankStock(stationId, fuelType, liters, capacityLiters) 
   }
   try { await logAudit({ userId: user?.uid, stationId, action: 'TANK_STOCK_SET', metadata: { fuelType, liters: Number(liters) } }); } catch {}
   return doc;
+}
+
+// Remove the ground stock entry for a fuel at a station (owner / super_admin only per rules)
+export async function removeTankStock(stationId, fuelType) {
+  const { user } = getState();
+  const existing = await queryDocs('tankStocks', t => t.stationId === stationId && t.fuelType === fuelType);
+  for (const doc of existing) {
+    await deleteDocById('tankStocks', doc.id);
+  }
+  try { await logAudit({ userId: user?.uid, stationId, action: 'TANK_STOCK_REMOVED', metadata: { fuelType } }); } catch {}
+  return existing.length;
 }
 
 // Compute liters sold for a fuel bucket ('ms' | 'hsd') since a baseline time, from shifts
