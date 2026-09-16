@@ -236,9 +236,17 @@ service cloud.firestore {
     // authenticated authorized caller or an Admin SDK backend (which bypasses
     // Rules after performing its own authorization checks).
     match /users/{userId} {
-      allow get, list: if isActiveUser() && (
+      // Keep the path-bound self check out of list evaluation: collection
+      // queries do not bind a single userId and would otherwise evaluate null.
+      allow get: if isActiveUser() && (
         request.auth.uid == userId
         || isSuperAdmin()
+        || ((isOwner() || isManager() || isAdmin())
+          && sharesManagedStation(resource.data))
+      );
+
+      allow list: if isActiveUser() && (
+        isSuperAdmin()
         || ((isOwner() || isManager() || isAdmin())
           && sharesManagedStation(resource.data))
       );
