@@ -1,35 +1,92 @@
-import { listDocs, addDocTo, updateDocById, getDocById, logAudit, queryDocs } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, getDocById, logAudit } from './firestoreService.js';
 import { getState } from '../state.js';
 import { getIsDemo } from '../firebase.js';
+
+/**
+ * Resolve the station IDs this caller can actually use for staff-directory
+ * work. An owner's profile stationIds is deliberately never used as proof of
+ * ownership: it can be stale or polluted. Owner scope comes from the station
+ * documents' ownerId instead.
+ */
+async function getVerifiedStationIds(user) {
+  const claimedIds = [...new Set((user.stationIds || []).filter(id => typeof id === 'string' && id))];
+
+  if (user.role === 'owner') {
+    const stations = getIsDemo()
+      ? await listDocs('stations')
+      : await listDocs('stations', [{ field: 'ownerId', op: '==', value: user.uid }]);
+    return stations
+      .filter(station => station.ownerId === user.uid)
+      .map(station => station.id);
+  }
+
+  // Managers and admins remain assignment-scoped. Resolve each claimed
+  // assignment to a readable station document before using it in a query.
+  if (user.role === 'manager' || user.role === 'admin') {
+    if (getIsDemo()) {
+      const stations = await listDocs('stations');
+      const stationSet = new Set(stations.map(station => station.id));
+      return claimedIds.filter(id => stationSet.has(id));
+    }
+
+    const stations = await Promise.all(claimedIds.map(async id => {
+      try { return await getDocById('stations', id); } catch { return null; }
+    }));
+    return stations.filter(Boolean).map(station => station.id);
+  }
+
+  return [];
+}
 
 export async function getEmployees(stationId=null) {
   const { user } = getState();
   if (!user) return [];
 
-  if (getIsDemo()) {
-    const all = await listDocs('users');
-    return stationId ? all.filter(u => (u.stationIds||[]).includes(stationId)) : all;
-  }
   if (user.role === 'super_admin') return listDocs('users');
   if (user.role === 'attendant') {
     const self = await getDocById('users', user.uid);
     return self && (!stationId || (self.stationIds || []).includes(stationId)) ? [self] : [];
   }
 
-  // Rules can prove array membership only when the query fixes the complete
-  // stationIds array. Query the common single-station assignment plus the
-  // caller's own assignment set, then merge duplicates.
-  const assignments = stationId
-    ? [[stationId], ...(user.stationIds?.includes(stationId) ? [user.stationIds] : [])]
-    : (user.stationIds || []).map(id => [id]).concat([user.stationIds || []]);
+  const verifiedStationIds = await getVerifiedStationIds(user);
+  const requestedStationIds = stationId
+    ? (verifiedStationIds.includes(stationId) ? [stationId] : [])
+    : verifiedStationIds;
+  if (!requestedStationIds.length) return [];
+
+  if (getIsDemo()) {
+    const allowedStationIds = new Set(requestedStationIds);
+    const all = await listDocs('users');
+    return all.filter(employee => {
+      const employeeStationIds = employee.stationIds || [];
+      // Match the rules' intentional fail-closed limit for owner directory
+      // access: owner authority can be proven only for a single assignment.
+      if (user.role === 'owner') {
+        return employeeStationIds.length === 1 && allowedStationIds.has(employeeStationIds[0]);
+      }
+      return employeeStationIds.some(id => allowedStationIds.has(id));
+    });
+  }
+
+  // Rules can prove directory access only when the query fixes the complete
+  // target stationIds array. Build those constraints from verified station
+  // documents, not from user.stationIds. Managers/admins retain their
+  // assignment-scoped full-set query; owners use single-station lookups so the
+  // ownerId model remains the sole source of tenant authority.
+  const assignments = user.role === 'owner'
+    ? requestedStationIds.map(id => [id])
+    : stationId
+      ? [[stationId], ...(verifiedStationIds.length > 1 ? [verifiedStationIds] : [])]
+      : requestedStationIds.map(id => [id]).concat(verifiedStationIds.length > 1 ? [verifiedStationIds] : []);
   const uniqueAssignments = [...new Map(
-    assignments.filter(ids => ids.length).map(ids => [JSON.stringify(ids), ids]),
+    assignments.map(ids => [JSON.stringify(ids), ids]),
   ).values()];
   const batches = await Promise.all(uniqueAssignments.map(stationIds => listDocs('users', [
     { field: 'stationIds', op: '==', value: stationIds },
   ])));
+  const allowedStationIds = new Set(requestedStationIds);
   return [...new Map(batches.flat().map(item => [item.id, item])).values()]
-    .filter(item => !stationId || (item.stationIds || []).includes(stationId));
+    .filter(item => (item.stationIds || []).some(id => allowedStationIds.has(id)));
 }
 
 export async function getUserById(uid) { return await getDocById('users', uid); }
