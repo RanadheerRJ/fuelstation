@@ -1,131 +1,694 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Firestore Rules are the authorization boundary. Frontend role checks only
+    // control presentation and must never grant access on their own.
 
     function isSignedIn() {
       return request.auth != null;
     }
 
+    function userPath(userId) {
+      return /databases/$(database)/documents/users/$(userId);
+    }
+
+    function currentUserExists() {
+      return isSignedIn() && exists(userPath(request.auth.uid));
+    }
+
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return currentUserExists()
+        && getUserData().status == 'active';
+    }
+
+    function hasRole(role) {
+      return isActiveUser() && getUserData().role == role;
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && getUserData().role == 'super_admin';
+      return hasRole('super_admin');
     }
 
     function isOwner() {
-      return isSignedIn() && getUserData().role == 'owner';
+      return hasRole('owner');
     }
 
-    function isManagerOrAbove() {
-      return isSignedIn() && getUserData().role in ['super_admin','owner','admin','manager'];
+    function isManager() {
+      return hasRole('manager');
     }
 
-    function isSameUser(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isAdmin() {
+      return hasRole('admin');
     }
 
-    // USERS - Invite only, single super_admin
+    function isAttendant() {
+      return hasRole('attendant');
+    }
+
+    function hasStationAssignment(stationId) {
+      return isActiveUser()
+        && getUserData().stationIds is list
+        && stationId in getUserData().stationIds;
+    }
+
+    function ownsStation(stationId) {
+      return isOwner()
+        && exists(/databases/$(database)/documents/stations/$(stationId))
+        && get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid;
+    }
+
+    function isStationMember(stationId) {
+      return isSuperAdmin()
+        || hasStationAssignment(stationId)
+        || ownsStation(stationId);
+    }
+
+    function canManageStation(stationId) {
+      return isSuperAdmin()
+        || (isStationMember(stationId)
+          && (isOwner() || isManager() || isAdmin()));
+    }
+
+    function canManageEmployees(stationId) {
+      return isSuperAdmin()
+        || (isStationMember(stationId)
+          && (isOwner() || isManager() || isAdmin()));
+    }
+
+    function canReviewShift(stationId) {
+      return isSuperAdmin()
+        || (isStationMember(stationId)
+          && (isOwner() || isManager() || isAdmin()));
+    }
+
+    function canModifyOwnShift() {
+      return isActiveUser()
+        && isStationMember(resource.data.stationId)
+        && resource.data.userId == request.auth.uid;
+    }
+
+    function isApprovedShift() {
+      return resource.data.status == 'APPROVED';
+    }
+
+    function isOwnerOfResource() {
+      return isActiveUser() && (
+        (resource.data.keys().hasAny(['userId'])
+          && resource.data.userId == request.auth.uid)
+        || (resource.data.keys().hasAny(['createdBy'])
+          && resource.data.createdBy == request.auth.uid)
+        || (resource.data.keys().hasAny(['staffUserId'])
+          && resource.data.staffUserId == request.auth.uid)
+      );
+    }
+
+    function hasValidStationId(data) {
+      return data.stationId is string
+        && data.stationId.size() > 0;
+    }
+
+    function stationIdIsUnchanged() {
+      return request.resource.data.stationId == resource.data.stationId;
+    }
+
+    function validRole(role) {
+      return role in ['super_admin', 'owner', 'manager', 'admin', 'attendant'];
+    }
+
+    function validUserStatus(status) {
+      return status in ['active', 'inactive'];
+    }
+
+    function validResourceStatus(status) {
+      return status in ['active', 'inactive', 'ARCHIVED', 'RETIRED'];
+    }
+
+    function validFuelType(fuelType) {
+      return fuelType in ['Petrol', 'Diesel', 'Premium Petrol', 'CNG', 'MS', 'HSD'];
+    }
+
+    function validNonNegativeNumber(value) {
+      return value is number && value >= 0;
+    }
+
+    function callerStationIds() {
+      return getUserData().stationIds;
+    }
+
+    function stationsAreWithinCallerAuthority(stationIds) {
+      return isSuperAdmin()
+        || (isActiveUser()
+          && callerStationIds() is list
+          && stationIds is list
+          && stationIds.size() > 0
+          && stationIds.hasOnly(callerStationIds()));
+    }
+
+    function userHasValidShape(data) {
+      return data.keys().hasAll(['name', 'phone', 'role', 'stationIds', 'status'])
+        && data.keys().hasOnly([
+          'name', 'phone', 'role', 'stationIds', 'status',
+          'createdAt', 'createdBy', 'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.phone is string
+        && data.phone.matches('^[0-9]{10}$')
+        && validRole(data.role)
+        && data.stationIds is list
+        && validUserStatus(data.status);
+    }
+
+    function sharesManagedStation(targetData) {
+      return targetData.stationIds is list
+        && callerStationIds() is list
+        && targetData.stationIds.hasAny(callerStationIds());
+    }
+
+    function canCreateUserProfile(data) {
+      return userHasValidShape(data)
+        && data.status == 'active'
+        && data.createdBy == request.auth.uid
+        && (
+          isSuperAdmin()
+          || (isOwner()
+            && data.role in ['manager', 'admin', 'attendant']
+            && stationsAreWithinCallerAuthority(data.stationIds))
+          || ((isManager() || isAdmin())
+            && data.role == 'attendant'
+            && stationsAreWithinCallerAuthority(data.stationIds))
+        );
+    }
+
+    function isSafeSelfProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['name', 'phone', 'updatedAt'])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.stationIds == resource.data.stationIds
+        && request.resource.data.status == resource.data.status;
+    }
+
+    function ownerCanUpdateStaffProfile() {
+      return isOwner()
+        && resource.data.role in ['manager', 'admin', 'attendant']
+        && request.resource.data.role in ['manager', 'admin', 'attendant']
+        && sharesManagedStation(resource.data)
+        && stationsAreWithinCallerAuthority(request.resource.data.stationIds);
+    }
+
+    function managerCanUpdateStaffProfile() {
+      return isManager()
+        && resource.data.role in ['manager', 'attendant']
+        && request.resource.data.role == resource.data.role
+        && sharesManagedStation(resource.data)
+        && stationsAreWithinCallerAuthority(request.resource.data.stationIds);
+    }
+
+    function adminCanUpdateStaffProfile() {
+      return isAdmin()
+        && resource.data.role in ['admin', 'manager', 'attendant']
+        && request.resource.data.role == resource.data.role
+        && sharesManagedStation(resource.data)
+        && stationsAreWithinCallerAuthority(request.resource.data.stationIds);
+    }
+
+    // User profiles contain roles and station membership, so they receive the
+    // strictest handling. New privileged identities must be provisioned by an
+    // authenticated authorized caller or an Admin SDK backend (which bypasses
+    // Rules after performing its own authorization checks).
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (
-        isSuperAdmin() || 
-        isManagerOrAbove() || 
+      allow get, list: if isActiveUser() && (
         request.auth.uid == userId
+        || isSuperAdmin()
+        || ((isOwner() || isManager() || isAdmin())
+          && sharesManagedStation(resource.data))
       );
-      allow update: if isSignedIn() && (
-        isSuperAdmin() ||
-        isOwner() ||
-        isSameUser(userId) ||
-        getUserData().role in ['admin','manager']
-      );
-      allow delete: if isSuperAdmin() || isOwner();
-    }
 
-    // STATIONS - Only owner and super_admin can destroy
-    match /stations/{stationId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isOwner() || true);
-      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      // Only Station Owner and Super Admin can delete station
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
-    }
+      allow create: if isActiveUser()
+        && canCreateUserProfile(request.resource.data);
 
-    // Pumps - read all, write manager+, delete owner only
-    match /pumps/{pumpId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      allow update: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      // Only owner and super_admin can delete (destroy data)
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
-    }
+      allow update: if isActiveUser()
+        && userHasValidShape(request.resource.data)
+        && (
+          (request.auth.uid == userId && isSafeSelfProfileUpdate())
+          || isSuperAdmin()
+          || (request.auth.uid != userId && ownerCanUpdateStaffProfile())
+          || (request.auth.uid != userId && managerCanUpdateStaffProfile())
+          || (request.auth.uid != userId && adminCanUpdateStaffProfile())
+        );
 
-    // Nozzles - read all, delete owner only
-    match /nozzles/{nozzleId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isSuperAdmin() || isManagerOrAbove());
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
-    }
-
-    // Tank / Ground stock - read all, write manager+, delete owner only
-    match /tankStocks/{stockId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isManagerOrAbove();
-      allow update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
-    }
-
-    // Prices - read all, write manager+, never delete (history)
-    match /prices/{priceId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isManagerOrAbove();
-      allow update: if isSignedIn() && isManagerOrAbove();
+      // Deactivate profiles instead. Authentication deletion is a backend task.
       allow delete: if false;
     }
 
-    // Shifts - read all, create/update all, delete owner only
+    function stationHasValidShape(data) {
+      return data.keys().hasAll(['name', 'address', 'phone', 'status', 'ownerId', 'createdBy'])
+        && data.keys().hasOnly([
+          'name', 'address', 'phone', 'status', 'ownerId', 'managerId',
+          'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.address is string
+        && data.phone is string
+        && validResourceStatus(data.status)
+        && data.ownerId is string
+        && data.createdBy is string;
+    }
+
+    function canReadStationDocument(stationId) {
+      return isSuperAdmin()
+        || hasStationAssignment(stationId)
+        || (isOwner() && resource.data.ownerId == request.auth.uid);
+    }
+
+    match /stations/{stationId} {
+      allow get, list: if isActiveUser() && canReadStationDocument(stationId);
+
+      allow create: if isActiveUser()
+        && stationHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && (
+          isSuperAdmin()
+          || (isOwner() && request.resource.data.ownerId == request.auth.uid)
+        );
+
+      allow update: if isActiveUser()
+        && stationHasValidShape(request.resource.data)
+        && (
+          isSuperAdmin()
+          || (isOwner()
+            && isStationMember(stationId)
+            && request.resource.data.ownerId == resource.data.ownerId
+            && request.resource.data.createdBy == resource.data.createdBy)
+          || ((isManager() || isAdmin())
+            && isStationMember(stationId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['name', 'address', 'phone', 'managerId', 'updatedAt']))
+        );
+
+      // Archive stations instead of deleting accounting history from a browser.
+      allow delete: if false;
+    }
+
+    function pumpHasValidShape(data) {
+      return data.keys().hasAll(['stationId', 'name', 'number', 'status', 'createdBy'])
+        && data.keys().hasOnly([
+          'stationId', 'name', 'number', 'status', 'createdBy',
+          'createdAt', 'updatedAt'
+        ])
+        && hasValidStationId(data)
+        && data.name is string
+        && data.name.size() > 0
+        && data.number is number
+        && validResourceStatus(data.status);
+    }
+
+    match /pumps/{pumpId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId);
+
+      allow create: if canManageStation(request.resource.data.stationId)
+        && pumpHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if canManageStation(resource.data.stationId)
+        && stationIdIsUnchanged()
+        && pumpHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy;
+
+      allow delete: if isSuperAdmin()
+        || (isOwner() && isStationMember(resource.data.stationId));
+    }
+
+    function nozzleHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'pumpId', 'number', 'fuelType', 'status',
+          'lastReading', 'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'pumpId', 'number', 'fuelType', 'status',
+          'lastReading', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && hasValidStationId(data)
+        && data.pumpId is string
+        && data.number is number
+        && validFuelType(data.fuelType)
+        && validResourceStatus(data.status)
+        && validNonNegativeNumber(data.lastReading);
+    }
+
+    function nozzlePumpMatchesStation(data) {
+      return exists(/databases/$(database)/documents/pumps/$(data.pumpId))
+        && get(/databases/$(database)/documents/pumps/$(data.pumpId)).data.stationId == data.stationId;
+    }
+
+    match /nozzles/{nozzleId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId);
+
+      allow create: if canManageStation(request.resource.data.stationId)
+        && nozzleHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && nozzlePumpMatchesStation(request.resource.data);
+
+      allow update: if canManageStation(resource.data.stationId)
+        && stationIdIsUnchanged()
+        && nozzleHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && nozzlePumpMatchesStation(request.resource.data);
+
+      allow delete: if isSuperAdmin()
+        || (isOwner() && isStationMember(resource.data.stationId));
+    }
+
+    function tankStockHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'fuelType', 'baselineLiters', 'baselineTime', 'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'fuelType', 'baselineLiters', 'baselineTime',
+          'capacityLiters', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && hasValidStationId(data)
+        && validFuelType(data.fuelType)
+        && validNonNegativeNumber(data.baselineLiters)
+        && (!data.keys().hasAny(['capacityLiters'])
+          || data.capacityLiters == null
+          || validNonNegativeNumber(data.capacityLiters))
+        && data.updatedBy == request.auth.uid;
+    }
+
+    match /tankStocks/{stockId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId);
+
+      allow create: if canManageStation(request.resource.data.stationId)
+        && tankStockHasValidShape(request.resource.data);
+
+      allow update: if canManageStation(resource.data.stationId)
+        && stationIdIsUnchanged()
+        && tankStockHasValidShape(request.resource.data);
+
+      allow delete: if isSuperAdmin()
+        || (isOwner() && isStationMember(resource.data.stationId));
+    }
+
+    function priceHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'fuelType', 'price', 'effectiveFrom',
+          'effectiveTo', 'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'fuelType', 'price', 'effectiveFrom',
+          'effectiveTo', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && hasValidStationId(data)
+        && validFuelType(data.fuelType)
+        && validNonNegativeNumber(data.price)
+        && data.createdBy is string;
+    }
+
+    match /prices/{priceId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId);
+
+      allow create: if canManageStation(request.resource.data.stationId)
+        && priceHasValidShape(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.effectiveTo == null;
+
+      // Price history is append-only. An active record may only be closed once.
+      allow update: if canManageStation(resource.data.stationId)
+        && stationIdIsUnchanged()
+        && priceHasValidShape(request.resource.data)
+        && resource.data.effectiveTo == null
+        && request.resource.data.effectiveTo != null
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['effectiveTo', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    function shiftHasValidCreateShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'userId', 'employeeName', 'startTime',
+          'status', 'nozzles', 'totals', 'correctionRequests'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'userId', 'employeeId', 'employeeName',
+          'startTime', 'businessDate', 'status', 'nozzles', 'totals',
+          'correctionRequests', 'createdAt'
+        ])
+        && hasValidStationId(data)
+        && data.userId == request.auth.uid
+        && data.employeeName == getUserData().name
+        && data.status == 'ACTIVE'
+        && data.nozzles is list
+        && data.nozzles.size() > 0
+        && data.totals is map
+        && data.correctionRequests is list
+        && data.totals.totalLiters == 0
+        && data.totals.totalRevenue == 0
+        && data.totals.totalPayments == 0;
+    }
+
+    function shiftIdentityIsUnchanged() {
+      return request.resource.data.stationId == resource.data.stationId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.employeeName == resource.data.employeeName
+        && request.resource.data.startTime == resource.data.startTime;
+    }
+
+    function ownShiftUpdateIsAllowed() {
+      return canModifyOwnShift()
+        && shiftIdentityIsUnchanged()
+        && (
+          (resource.data.status == 'ACTIVE'
+            && request.resource.data.status == 'ACTIVE'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['nozzles', 'updatedAt']))
+          || (resource.data.status in ['ACTIVE', 'REJECTED']
+            && request.resource.data.status == 'PENDING_REVIEW'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'nozzles', 'totals', 'endTime', 'closeTime', 'status',
+                'correctionRequests', 'resubmittedAt', 'updatedAt'
+              ]))
+          || (resource.data.status == 'REJECTED'
+            && request.resource.data.status == 'REJECTED'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['correctionRequests', 'updatedAt']))
+        );
+    }
+
+    function reviewerDecisionIsAllowed() {
+      return canReviewShift(resource.data.stationId)
+        && resource.data.userId != request.auth.uid
+        && shiftIdentityIsUnchanged()
+        && (
+          (resource.data.status == 'PENDING_REVIEW'
+            && request.resource.data.status == 'APPROVED'
+            && request.resource.data.approvedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'status', 'approvedBy', 'approvedAt',
+                'correctionRequests', 'updatedAt'
+              ]))
+          || (resource.data.status == 'PENDING_REVIEW'
+            && request.resource.data.status == 'REJECTED'
+            && request.resource.data.rejectedBy == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'status', 'rejectedBy', 'rejectedAt', 'rejectionReason',
+                'correctionRequests', 'updatedAt'
+              ]))
+          || (resource.data.status == 'REJECTED'
+            && request.resource.data.status == 'PENDING_REVIEW'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'nozzles', 'totals', 'endTime', 'closeTime', 'status',
+                'correctionRequests', 'resubmittedAt', 'updatedAt'
+              ]))
+          || (resource.data.status == 'REJECTED'
+            && request.resource.data.status == 'REJECTED'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['correctionRequests', 'updatedAt']))
+        );
+    }
+
     match /shifts/{shiftId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId)
+        && (canReviewShift(resource.data.stationId)
+          || resource.data.userId == request.auth.uid);
+
+      allow create: if isActiveUser()
+        && isStationMember(request.resource.data.stationId)
+        && shiftHasValidCreateShape(request.resource.data);
+
+      // APPROVED shifts are immutable to every client role. Controlled backend
+      // correction and settlement workflows can be added later with Admin SDK.
+      allow update: if isActiveUser()
+        && !isApprovedShift()
+        && (ownShiftUpdateIsAllowed() || reviewerDecisionIsAllowed());
+
+      allow delete: if false;
     }
 
-    // Transactions - read all, delete owner only
-    match /transactions/{txId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+    function linkedShiftBelongsToCaller(data) {
+      return data.shiftId is string
+        && exists(/databases/$(database)/documents/shifts/$(data.shiftId))
+        && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.stationId == data.stationId
+        && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.userId == request.auth.uid;
     }
 
-    // Notes - read all, create/update/delete all
+    function linkedShiftAcceptsEntries(data) {
+      return linkedShiftBelongsToCaller(data)
+        && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.status in ['ACTIVE', 'REJECTED'];
+    }
+
+    function transactionHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'shiftId', 'type', 'amount', 'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'shiftId', 'type', 'customer', 'amount', 'reference',
+          'description', 'category', 'fuelType', 'liters', 'nozzleId',
+          'createdBy', 'createdAt', 'status'
+        ])
+        && hasValidStationId(data)
+        && data.type in ['credit', 'expense']
+        && validNonNegativeNumber(data.amount)
+        && data.amount > 0
+        && data.createdBy == request.auth.uid
+        && (!data.keys().hasAny(['liters']) || validNonNegativeNumber(data.liters));
+    }
+
+    match /transactions/{transactionId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId)
+        && (canReviewShift(resource.data.stationId)
+          || isOwnerOfResource()
+          || linkedShiftBelongsToCaller(resource.data));
+
+      allow create: if isActiveUser()
+        && isStationMember(request.resource.data.stationId)
+        && transactionHasValidShape(request.resource.data)
+        && (canReviewShift(request.resource.data.stationId)
+          || linkedShiftAcceptsEntries(request.resource.data));
+
+      // Financial entries are append-only.
+      allow update, delete: if false;
+    }
+
+    function noteHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'shiftId', 'userId', 'userName', 'text'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'shiftId', 'userId', 'userName', 'text',
+          'pumpId', 'nozzleId', 'createdAt'
+        ])
+        && hasValidStationId(data)
+        && data.userId == request.auth.uid
+        && data.userName == getUserData().name
+        && data.text is string
+        && data.text.size() > 0;
+    }
+
     match /notes/{noteId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId)
+        && (canReviewShift(resource.data.stationId)
+          || resource.data.userId == request.auth.uid
+          || linkedShiftBelongsToCaller(resource.data));
+
+      allow create: if isActiveUser()
+        && isStationMember(request.resource.data.stationId)
+        && noteHasValidShape(request.resource.data)
+        && (canReviewShift(request.resource.data.stationId)
+          || linkedShiftAcceptsEntries(request.resource.data));
+
+      allow update, delete: if false;
     }
 
-    // Settlements / Collections - Owner can manage collections, read all signed in
-    match /settlements/{setId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isManagerOrAbove();
-      allow update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+    function settlementHasValidShape(data) {
+      return data.keys().hasAll([
+          'stationId', 'staffUserId', 'amount', 'type', 'createdBy'
+        ])
+        && data.keys().hasOnly([
+          'stationId', 'staffUserId', 'staffName', 'shiftId', 'shiftIds',
+          'amount', 'type', 'method', 'notes', 'createdBy', 'createdByName',
+          'createdAt', 'status'
+        ])
+        && hasValidStationId(data)
+        && validNonNegativeNumber(data.amount)
+        && data.amount > 0
+        && data.type in ['collect', 'return']
+        && data.createdBy == request.auth.uid;
     }
 
-    // Audit Logs - REMOVED as per requirement - no read/write
-    match /auditLogs/{logId} {
+    match /settlements/{settlementId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId)
+        && (canReviewShift(resource.data.stationId)
+          || resource.data.staffUserId == request.auth.uid);
+
+      allow create: if canReviewShift(request.resource.data.stationId)
+        && settlementHasValidShape(request.resource.data);
+
+      // Ledger entries are append-only.
+      allow update, delete: if false;
+    }
+
+    function assignmentHasValidShape(data) {
+      return data.keys().hasAll(['stationId'])
+        && hasValidStationId(data);
+    }
+
+    match /assignments/{assignmentId} {
+      allow get, list: if isActiveUser()
+        && isStationMember(resource.data.stationId);
+
+      allow create: if canManageStation(request.resource.data.stationId)
+        && assignmentHasValidShape(request.resource.data);
+
+      allow update: if canManageStation(resource.data.stationId)
+        && stationIdIsUnchanged()
+        && assignmentHasValidShape(request.resource.data);
+
+      allow delete: if isSuperAdmin()
+        || (isOwner() && isStationMember(resource.data.stationId));
+    }
+
+    // Audit logs are written by trusted backend code only. They are readable by
+    // station reviewers and super admins, but never mutable through a client SDK.
+    match /auditLogs/{auditId} {
+      allow get, list: if isActiveUser()
+        && (isSuperAdmin()
+          || (resource.data.stationId is string
+            && canReviewShift(resource.data.stationId)));
+      allow create, update, delete: if false;
+    }
+
+    // Reserved models for later transactional/inventory phases remain closed
+    // until their backend invariants are implemented and tested.
+    match /nozzleAssignments/{assignmentId} {
       allow read, write: if false;
     }
 
-    // Assignments - read all, write manager+, delete owner only
-    match /assignments/{assignmentId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isManagerOrAbove();
-      allow delete: if isSignedIn() && (isSuperAdmin() || isOwner());
+    match /stockMovements/{movementId} {
+      allow read, write: if false;
+    }
+
+    // Deny all undeclared collections by default.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
