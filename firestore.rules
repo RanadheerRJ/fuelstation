@@ -62,27 +62,42 @@ service cloud.firestore {
     }
 
     function isStationMember(stationId) {
-      return isSuperAdmin()
-        || hasStationAssignment(stationId)
-        || ownsStation(stationId);
+      let user = getUserData();
+      return currentUserExists()
+        && user.status == 'active'
+        && (
+          user.role == 'super_admin'
+          || (user.stationIds is list && stationId in user.stationIds)
+          || (user.role == 'owner'
+            && exists(/databases/$(database)/documents/stations/$(stationId))
+            && get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid)
+        );
+    }
+
+    function canOperateStation(stationId) {
+      let user = getUserData();
+      return currentUserExists()
+        && user.status == 'active'
+        && user.role in ['super_admin', 'owner', 'manager', 'admin']
+        && (
+          user.role == 'super_admin'
+          || (user.stationIds is list && stationId in user.stationIds)
+          || (user.role == 'owner'
+            && exists(/databases/$(database)/documents/stations/$(stationId))
+            && get(/databases/$(database)/documents/stations/$(stationId)).data.ownerId == request.auth.uid)
+        );
     }
 
     function canManageStation(stationId) {
-      return isSuperAdmin()
-        || (isStationMember(stationId)
-          && (isOwner() || isManager() || isAdmin()));
+      return canOperateStation(stationId);
     }
 
     function canManageEmployees(stationId) {
-      return isSuperAdmin()
-        || (isStationMember(stationId)
-          && (isOwner() || isManager() || isAdmin()));
+      return canOperateStation(stationId);
     }
 
     function canReviewShift(stationId) {
-      return isSuperAdmin()
-        || (isStationMember(stationId)
-          && (isOwner() || isManager() || isAdmin()));
+      return canOperateStation(stationId);
     }
 
     function canModifyOwnShift() {
@@ -465,59 +480,58 @@ service cloud.firestore {
     }
 
     function ownShiftUpdateIsAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldStatus = resource.data.status;
+      let newStatus = request.resource.data.status;
       return canModifyOwnShift()
         && shiftIdentityIsUnchanged()
         && (
-          (resource.data.status == 'ACTIVE'
-            && request.resource.data.status == 'ACTIVE'
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['nozzles', 'updatedAt']))
-          || (resource.data.status in ['ACTIVE', 'REJECTED']
-            && request.resource.data.status == 'PENDING_REVIEW'
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
+          (oldStatus == 'ACTIVE'
+            && newStatus == 'ACTIVE'
+            && changed.hasOnly(['nozzles', 'updatedAt']))
+          || (oldStatus in ['ACTIVE', 'REJECTED']
+            && newStatus == 'PENDING_REVIEW'
+            && changed.hasOnly([
                 'nozzles', 'totals', 'endTime', 'closeTime', 'status',
                 'correctionRequests', 'resubmittedAt', 'updatedAt'
               ]))
-          || (resource.data.status == 'REJECTED'
-            && request.resource.data.status == 'REJECTED'
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['correctionRequests', 'updatedAt']))
+          || (oldStatus == 'REJECTED'
+            && newStatus == 'REJECTED'
+            && changed.hasOnly(['correctionRequests', 'updatedAt']))
         );
     }
 
     function reviewerDecisionIsAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldStatus = resource.data.status;
+      let newStatus = request.resource.data.status;
       return canReviewShift(resource.data.stationId)
         && resource.data.userId != request.auth.uid
         && shiftIdentityIsUnchanged()
         && (
-          (resource.data.status == 'PENDING_REVIEW'
-            && request.resource.data.status == 'APPROVED'
+          (oldStatus == 'PENDING_REVIEW'
+            && newStatus == 'APPROVED'
             && request.resource.data.approvedBy == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
+            && changed.hasOnly([
                 'status', 'approvedBy', 'approvedAt',
                 'correctionRequests', 'updatedAt'
               ]))
-          || (resource.data.status == 'PENDING_REVIEW'
-            && request.resource.data.status == 'REJECTED'
+          || (oldStatus == 'PENDING_REVIEW'
+            && newStatus == 'REJECTED'
             && request.resource.data.rejectedBy == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
+            && changed.hasOnly([
                 'status', 'rejectedBy', 'rejectedAt', 'rejectionReason',
                 'correctionRequests', 'updatedAt'
               ]))
-          || (resource.data.status == 'REJECTED'
-            && request.resource.data.status == 'PENDING_REVIEW'
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
+          || (oldStatus == 'REJECTED'
+            && newStatus == 'PENDING_REVIEW'
+            && changed.hasOnly([
                 'nozzles', 'totals', 'endTime', 'closeTime', 'status',
                 'correctionRequests', 'resubmittedAt', 'updatedAt'
               ]))
-          || (resource.data.status == 'REJECTED'
-            && request.resource.data.status == 'REJECTED'
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['correctionRequests', 'updatedAt']))
+          || (oldStatus == 'REJECTED'
+            && newStatus == 'REJECTED'
+            && changed.hasOnly(['correctionRequests', 'updatedAt']))
         );
     }
 
