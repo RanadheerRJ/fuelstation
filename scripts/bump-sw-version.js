@@ -14,10 +14,12 @@
 // Run automatically by .github/workflows/deploy.yml before each Pages deploy.
 // Also safe to run locally before testing - re-run whenever you change files.
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const SW_PATH = path.join(ROOT, 'service-worker.js');
 
