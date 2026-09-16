@@ -166,13 +166,18 @@ service cloud.firestore {
       return getUserData().stationIds;
     }
 
+    // Owners must prove ownership of the stations they assign staff to rather
+    // than relying on their own (possibly polluted) stationIds array.
     function stationsAreWithinCallerAuthority(stationIds) {
       return isSuperAdmin()
         || (isActiveUser()
-          && callerStationIds() is list
           && stationIds is list
           && stationIds.size() > 0
-          && stationIds.hasOnly(callerStationIds()));
+          && (
+            isOwner()
+              ? ownsAnyOfStations(stationIds)
+              : (callerStationIds() is list && stationIds.hasOnly(callerStationIds()))
+          ));
     }
 
     function userHasValidShape(data) {
@@ -190,10 +195,25 @@ service cloud.firestore {
         && validUserStatus(data.status);
     }
 
+    // Staff-directory scoping.
+    //
+    // Managers and admins are assignment-scoped, so stationIds overlap is the
+    // correct test for them. Owners are NOT: their stationIds may be stale or
+    // polluted, so an overlap test would expose another owner's staff. For an
+    // owner the target's station must be one they provably own via
+    // stations/{id}.ownerId.
     function sharesManagedStation(targetData) {
       return targetData.stationIds is list
         && callerStationIds() is list
-        && targetData.stationIds.hasAny(callerStationIds());
+        && targetData.stationIds.hasAny(callerStationIds())
+        && (!isOwner() || ownsAnyOfStations(targetData.stationIds));
+    }
+
+    // Rules cannot iterate a list against get(), so ownership is confirmed for
+    // the single-station assignment that staff profiles use in practice.
+    function ownsAnyOfStations(stationIds) {
+      return stationIds.size() == 1
+        && ownsStation(stationIds[0]);
     }
 
     function canCreateUserProfile(data) {
