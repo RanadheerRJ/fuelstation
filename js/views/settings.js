@@ -10,7 +10,9 @@ export async function settingsView({ root }) {
   const currentStation = stations.find(s => s.id === currentStationId) || stations[0];
   const isOwner = user.role === 'owner';
   const isSuperAdmin = user.role === 'super_admin';
-  const canDestroy = isOwner || isSuperAdmin; // Only owner and super_admin can destroy
+  // Destructive reset tools are demo-only. Live financial/history deletion is
+  // denied by Firestore Rules and must not be offered as a normal UI action.
+  const canDestroy = isDemo && (isOwner || isSuperAdmin);
 
   root.innerHTML = `
     <div class="container">
@@ -72,7 +74,7 @@ export async function settingsView({ root }) {
       ` : `
       <div class="neu-card" style="margin-top:16px;background:var(--bg)">
         <h3 style="font-weight:700;font-size:14px">🔒 Data Protection</h3>
-        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">Only Station Owner can reset or delete station data. You have ${user.role} role, so destroy actions are hidden.</p>
+        <p style="font-size:12px;color:var(--text-secondary);margin-top:6px">${isDemo ? `Only Station Owner can reset demo data. You have ${user.role} role, so destroy actions are hidden.` : 'Live station, financial, and audit history cannot be permanently deleted through the normal app.'}</p>
       </div>
       `}
 
@@ -223,24 +225,8 @@ export async function settingsView({ root }) {
 }
 
 async function resetEverything(isDemo) {
-  if (isDemo) {
-    const { clearDemoData } = await import('../state.js');
-    clearDemoData();
-    localStorage.removeItem('fuelops_refresh_pos');
-  } else {
-    const { getDbInstance, loadFirestoreModule } = await import('../firebase.js');
-    const { listDocs } = await import('../services/firestoreService.js');
-    const mod = await loadFirestoreModule();
-    const db = getDbInstance();
-    const collections = ['stations','pumps','nozzles','prices','shifts','transactions','notes','assignments','users'];
-    for (const coll of collections) {
-      const docs = await listDocs(coll);
-      for (const doc of docs) {
-        try {
-          const docId = doc.id || doc.uid;
-          await mod.deleteDoc(mod.doc(db, coll, docId));
-        } catch(e){ console.warn(`Failed ${coll}`, e); }
-      }
-    }
-  }
+  if (!isDemo) throw new Error('Permanent deletion is disabled for live data.');
+  const { clearDemoData } = await import('../state.js');
+  clearDemoData();
+  localStorage.removeItem('fuelops_refresh_pos');
 }

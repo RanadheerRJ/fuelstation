@@ -1,4 +1,4 @@
-import { listDocs, addDocTo, queryDocs, logAudit } from './firestoreService.js';
+import { listDocs, addDocTo, queryDocs, logAudit, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 
 export async function addCredit({ stationId, shiftId, customer, amount, reference, note }) {
@@ -42,13 +42,17 @@ export async function addExpense({ stationId, shiftId, category, amount, descrip
 }
 
 export async function getTransactions(stationId, opts={}) {
-  let all = await queryDocs('transactions', t => t.stationId === stationId);
+  const { user } = getState();
+  const filters = whereStation(stationId);
+  if (user?.role === 'attendant') {
+    filters.push({ field: 'createdBy', op: '==', value: user.uid });
+  }
+  let all = await queryDocs('transactions', t => t.stationId === stationId, filters);
   if (opts.shiftId) all = all.filter(t => t.shiftId === opts.shiftId);
   if (opts.type) all = all.filter(t => t.type === opts.type);
   return all.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 export async function getCreditsReport(stationId) {
-  const credits = await queryDocs('transactions', t => t.stationId === stationId && t.type === 'credit');
-  return credits;
+  return getTransactions(stationId, { type: 'credit' });
 }

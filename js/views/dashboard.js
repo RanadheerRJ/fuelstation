@@ -73,8 +73,8 @@ export async function dashboardView({ root }) {
   // Expenses map
   let expenseMap = {};
   try {
-    const { queryDocs } = await import('../services/firestoreService.js');
-    const allTx = await queryDocs('transactions', tx=> tx.stationId===activeStation.id && tx.type==='expense');
+    const { getTransactions } = await import('../services/transactions.js');
+    const allTx = await getTransactions(activeStation.id, { type: 'expense' });
     allTx.forEach(tx=>{ if (tx.shiftId) expenseMap[tx.shiftId] = (expenseMap[tx.shiftId]||0)+Number(tx.amount||0); });
   } catch {}
 
@@ -608,10 +608,6 @@ export async function dashboardView({ root }) {
         <button style="min-height:64px;border-radius:14px;background:#1a2535;color:white;border:none;font-weight:700;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px" onclick="location.hash='#/shifts/start'"><span style="font-size:22px">▶️</span>Start Shift</button>
       </div>
 
-      <div style="margin-top:14px;padding:12px;background:#f6ffed;border-radius:12px;border:1px solid #b7eb8f;text-align:center">
-        <div style="font-size:11px;color:#389e0d;font-weight:600">✅ Banking Dashboard • Simple • Elegant • No jackpot</div>
-        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">Gross - Expenses = Net = whole amount to owner • To Handover = Net - Payments • Pumps live status • Employee performance by liters</div>
-      </div>
     </div>
     <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:0.7}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}</style>
   `;

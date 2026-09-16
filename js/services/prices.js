@@ -1,8 +1,8 @@
-import { listDocs, addDocTo, updateDocById, queryDocs, logAudit } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, queryDocs, logAudit, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 
 export async function getPrices(stationId) {
-  const all = await queryDocs('prices', p => p.stationId === stationId);
+  const all = await queryDocs('prices', p => p.stationId === stationId, whereStation(stationId));
   // sort by effectiveFrom desc
   return all.sort((a,b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom));
 }
@@ -18,7 +18,7 @@ export async function getActivePrices(stationId) {
 }
 
 export async function getPriceForFuelAtTime(stationId, fuelType, atTime) {
-  const all = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType);
+  const all = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType, whereStation(stationId));
   const at = new Date(atTime);
   // find price where effectiveFrom <= at and (effectiveTo == null or >= at)
   const candidates = all.filter(p => {
@@ -35,7 +35,7 @@ export async function getPriceForFuelAtTime(stationId, fuelType, atTime) {
 export async function setPrice(stationId, fuelType, price) {
   const { user } = getState();
   // close previous active price
-  const active = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType && !p.effectiveTo);
+  const active = await queryDocs('prices', p => p.stationId === stationId && p.fuelType === fuelType && !p.effectiveTo, whereStation(stationId));
   const now = new Date();
   for (const old of active) {
     await updateDocById('prices', old.id, { effectiveTo: now.toISOString() });

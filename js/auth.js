@@ -122,21 +122,14 @@ export async function registerUserInFirebase({ phone, pin, name, role, stationId
     return newUser;
   }
 
-  // Firebase real - ensure data saves correctly
+  // Firebase real - privileged bootstrap is backend-only. Client-side checks
+  // cannot safely establish that a first super administrator does not exist.
+  if (role === 'super_admin') {
+    throw new Error('Live Super Admin accounts must be provisioned by an authorized backend administrator.');
+  }
+
   const fsMod = await loadFirestoreModule();
   const db = getDbInstance();
-
-  if (role === 'super_admin') {
-    try {
-      const { listDocs } = await import('./services/firestoreService.js');
-      const allUsers = await listDocs('users');
-      const hasSuper = allUsers.some(u => u.role === 'super_admin');
-      if (hasSuper) throw new Error('Super Admin already exists. Only one allowed.');
-    } catch (err) {
-      if (err.message.includes('Super Admin already exists')) throw err;
-      // If list fails, continue - maybe first user
-    }
-  }
 
   const authMod = await loadAuthModule();
   const auth = getAuthInstance();

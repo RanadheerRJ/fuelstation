@@ -1,22 +1,41 @@
-import { listDocs, addDocTo, updateDocById, getDocById, queryDocs } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, getDocById, queryDocs, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 import { calcLitersSold, calcRevenue, calcShiftTotals, calcPaymentsTotal, calcVariance, sumLitersByFuelGroup } from './calc.js';
 import { getPriceForFuelAtTime } from './prices.js';
 
 export async function getShifts(stationId, opts={}) {
-  let shifts = await queryDocs('shifts', s => s.stationId === stationId);
-  if (opts.userId) shifts = shifts.filter(s => s.userId === opts.userId);
+  const { user } = getState();
+  const scopedUserId = user?.role === 'attendant' ? user.uid : opts.userId;
+  const filters = whereStation(stationId);
+  if (scopedUserId) filters.push({ field: 'userId', op: '==', value: scopedUserId });
+  let shifts = await queryDocs('shifts', s => s.stationId === stationId, filters);
+  if (scopedUserId) shifts = shifts.filter(s => s.userId === scopedUserId);
   if (opts.status) shifts = shifts.filter(s => s.status === opts.status);
   return shifts.sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
 }
 
 export async function getActiveShiftForUser(userId) {
-  const all = await queryDocs('shifts', s => s.userId === userId && s.status === 'ACTIVE');
-  return all[0] || null;
+  const { user } = getState();
+  const stations = user?.stationIds || [];
+  const batches = await Promise.all(stations.map(stationId => queryDocs(
+    'shifts',
+    s => s.stationId === stationId && s.userId === userId && s.status === 'ACTIVE',
+    [...whereStation(stationId), { field: 'userId', op: '==', value: userId }],
+  )));
+  return batches.flat()[0] || null;
 }
 
 export async function startShift({ stationId, userId, employeeName, nozzles }) {
-  const activeShifts = await queryDocs('shifts', s => s.stationId === stationId && s.status === 'ACTIVE');
+  const { user } = getState();
+  const filters = whereStation(stationId);
+  if (user?.role === 'attendant') {
+    filters.push({ field: 'userId', op: '==', value: userId });
+  }
+  const activeShifts = await queryDocs(
+    'shifts',
+    s => s.stationId === stationId && s.status === 'ACTIVE',
+    filters,
+  );
   for (const sh of activeShifts) {
     for (const n of sh.nozzles || []) {
       if (nozzles.some(nn => nn.nozzleId === n.nozzleId)) {
@@ -79,7 +98,11 @@ export async function closeShift(shiftId, { closingReadings, payments }) {
   let totalExpenses = 0;
   let totalTestingLiters = 0;
   try {
-    const txs = await queryDocs('transactions', t => t.stationId === shift.stationId && t.shiftId === shift.id && t.type === 'expense');
+    const txs = await queryDocs(
+      'transactions',
+      t => t.stationId === shift.stationId && t.shiftId === shift.id && t.type === 'expense',
+      [...whereStation(shift.stationId), { field: 'shiftId', op: '==', value: shift.id }],
+    );
     totalExpenses = txs.reduce((a,b)=>a+Number(b.amount||0),0);
     totalTestingLiters = txs.filter(t => (t.category||'').toLowerCase()==='testing').reduce((a,b)=>a+Number(b.liters||0),0);
   } catch { totalExpenses = 0; }
@@ -186,8 +209,18 @@ export async function addNozzleToShift(shiftId, { nozzleId, pumpId, fuelType, op
     throw new Error('Nozzle already in your shift');
   }
 
-  // Check nozzle not in other active shifts
-  const activeShifts = await queryDocs('shifts', s => s.stationId === shift.stationId && s.status === 'ACTIVE' && s.id !== shiftId);
+  // Check other shifts visible to this role. Cross-employee nozzle exclusivity
+  // must ultimately be enforced transactionally by the backend.
+  const filters = whereStation(shift.stationId);
+  const { user } = getState();
+  if (user?.role === 'attendant') {
+    filters.push({ field: 'userId', op: '==', value: user.uid });
+  }
+  const activeShifts = await queryDocs(
+    'shifts',
+    s => s.stationId === shift.stationId && s.status === 'ACTIVE' && s.id !== shiftId,
+    filters,
+  );
   for (const sh of activeShifts) {
     if ((sh.nozzles||[]).some(n=>n.nozzleId===nozzleId)) {
       throw new Error(`Nozzle already has an active shift by ${sh.employeeName}`);

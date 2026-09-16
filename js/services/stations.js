@@ -1,22 +1,42 @@
-import { listDocs, addDocTo, updateDocById, getDocById, logAudit, queryDocs } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, getDocById, logAudit, queryDocs, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
+import { getIsDemo } from '../firebase.js';
 
 export async function getStationsForCurrentUser() {
   const { user } = getState();
   if (!user) return [];
-  const all = await listDocs('stations');
+
+  let stations;
+  if (getIsDemo() || user.role === 'super_admin') {
+    stations = await listDocs('stations');
+  } else {
+    // Fetch assigned station documents individually so a list request can never
+    // expand beyond the station IDs protected in the caller's profile.
+    const assigned = (await Promise.all(
+      (user.stationIds || []).map(id => getDocById('stations', id)),
+    )).filter(Boolean);
+
+    if (user.role === 'owner') {
+      const owned = await listDocs('stations', [
+        { field: 'ownerId', op: '==', value: user.uid },
+      ]);
+      stations = [...new Map([...assigned, ...owned].map(item => [item.id, item])).values()];
+    } else {
+      stations = assigned;
+    }
+  }
+
   // Cache for topbar
-  try { localStorage.setItem('fuelops_stations_cache', JSON.stringify(all.map(s=>({id:s.id,name:s.name})))); } catch {}
-  if (user.role === 'super_admin') {
-    return all; // super admin sees all
-  }
-  if (user.role === 'owner') {
-    return all.filter(s => s.ownerId === user.uid || (user.stationIds||[]).includes(s.id));
-  }
-  return all.filter(s => (user.stationIds||[]).includes(s.id));
+  try { localStorage.setItem('fuelops_stations_cache', JSON.stringify(stations.map(s=>({id:s.id,name:s.name})))); } catch {}
+  return stations;
 }
 
-export async function getAllStations() { return await listDocs('stations'); }
+export async function getAllStations() {
+  const { user } = getState();
+  return user?.role === 'super_admin' || getIsDemo()
+    ? listDocs('stations')
+    : getStationsForCurrentUser();
+}
 
 export async function createStation(data) {
   const { user } = getState();
@@ -53,8 +73,7 @@ export async function deleteStation(id) {
   
   // For owner, check if station belongs to them
   if (isOwner && !isSuperAdmin) {
-    const all = await listDocs('stations');
-    const station = all.find(s => s.id === id);
+    const station = await getDocById('stations', id);
     if (!station) throw new Error('Station not found');
     const isOwn = station.ownerId === user.uid || (user.stationIds||[]).includes(id);
     if (!isOwn) throw new Error('You can only delete your own station');
@@ -96,8 +115,7 @@ export async function resetStationData(stationId) {
   if (isOwner && !isSuperAdmin && user) {
     const hasAccess = (user.stationIds||[]).includes(stationId);
     if (!hasAccess) {
-      const allStations = await listDocs('stations');
-      const station = allStations.find(s => s.id === stationId);
+      const station = await getDocById('stations', stationId);
       if (!station || station.ownerId !== user.uid) {
         throw new Error('You can only reset your own station');
       }
@@ -127,7 +145,7 @@ export async function resetStationData(stationId) {
     const collections = ['pumps','nozzles','prices','shifts','transactions','notes','assignments'];
     
     for (const coll of collections) {
-      const docs = await queryDocs(coll, d => d.stationId === stationId);
+      const docs = await queryDocs(coll, d => d.stationId === stationId, whereStation(stationId));
       console.log(`[Reset Station ${stationId}] Deleting ${docs.length} docs from ${coll}`);
       for (const doc of docs) {
         try {

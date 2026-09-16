@@ -1,8 +1,18 @@
-import { queryDocs } from './firestoreService.js';
+import { queryDocs, whereStation } from './firestoreService.js';
+import { getState } from '../state.js';
 import { sumLitersByFuelGroup } from './calc.js';
 
+function reportScope(stationId, attendantField) {
+  const filters = whereStation(stationId);
+  const { user } = getState();
+  if (user?.role === 'attendant') {
+    filters.push({ field: attendantField, op: '==', value: user.uid });
+  }
+  return filters;
+}
+
 export async function getDailyReport(stationId, dateStr) {
-  const shifts = await queryDocs('shifts', s => s.stationId === stationId);
+  const shifts = await queryDocs('shifts', s => s.stationId === stationId, reportScope(stationId, 'userId'));
   const dayShifts = shifts.filter(s => {
     const d = new Date(s.startTime).toISOString().slice(0,10);
     return d === dateStr;
@@ -32,7 +42,7 @@ export async function getDailyReport(stationId, dateStr) {
 
 export async function getReportForRange(stationId, fromDateStr, toDateStr, opts={}) {
   const { userId, status, employeeId } = opts;
-  let shifts = await queryDocs('shifts', s => s.stationId === stationId);
+  let shifts = await queryDocs('shifts', s => s.stationId === stationId, reportScope(stationId, 'userId'));
   
   const from = new Date(fromDateStr + 'T00:00:00');
   const to = new Date(toDateStr + 'T23:59:59');
@@ -51,7 +61,7 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
   // Expenses must be subtracted from gross because fuel came out of nozzle (testing etc)
   let allTx = [];
   try {
-    allTx = await queryDocs('transactions', t => t.stationId === stationId);
+    allTx = await queryDocs('transactions', t => t.stationId === stationId, reportScope(stationId, 'createdBy'));
   } catch { allTx = []; }
 
   // Map shiftId -> total expenses
@@ -176,7 +186,7 @@ export async function getReportForRange(stationId, fromDateStr, toDateStr, opts=
 
   let settlements = [];
   try {
-    const allSet = await queryDocs('settlements', s => s.stationId === stationId);
+    const allSet = await queryDocs('settlements', s => s.stationId === stationId, reportScope(stationId, 'staffUserId'));
     settlements = allSet.filter(s => {
       const d = new Date(s.createdAt);
       return d >= from && d <= to;

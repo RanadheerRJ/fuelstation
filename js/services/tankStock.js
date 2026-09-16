@@ -1,14 +1,14 @@
 // Ground / Tank stock service
 // Owner inputs the measured (dip) ground stock per fuel.
 // Available stock is auto-balanced = baseline stock - liters sold since the entry.
-import { queryDocs, addDocTo, updateDocById, deleteDocById, logAudit } from './firestoreService.js';
+import { queryDocs, addDocTo, updateDocById, deleteDocById, logAudit, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 
 // One doc per station+fuelType in collection 'tankStocks'
 // { stationId, fuelType, baselineLiters, baselineTime, capacityLiters, updatedBy }
 
 export async function getTankStocks(stationId) {
-  const all = await queryDocs('tankStocks', t => t.stationId === stationId);
+  const all = await queryDocs('tankStocks', t => t.stationId === stationId, whereStation(stationId));
   const map = {};
   all.forEach(t => {
     // keep latest baseline per fuel type
@@ -22,7 +22,7 @@ export async function getTankStocks(stationId) {
 export async function setTankStock(stationId, fuelType, liters, capacityLiters) {
   const { user } = getState();
   const now = new Date().toISOString();
-  const existing = await queryDocs('tankStocks', t => t.stationId === stationId && t.fuelType === fuelType);
+  const existing = await queryDocs('tankStocks', t => t.stationId === stationId && t.fuelType === fuelType, whereStation(stationId));
   const payload = {
     stationId,
     fuelType,
@@ -44,7 +44,7 @@ export async function setTankStock(stationId, fuelType, liters, capacityLiters) 
 // Remove the ground stock entry for a fuel at a station (owner / super_admin only per rules)
 export async function removeTankStock(stationId, fuelType) {
   const { user } = getState();
-  const existing = await queryDocs('tankStocks', t => t.stationId === stationId && t.fuelType === fuelType);
+  const existing = await queryDocs('tankStocks', t => t.stationId === stationId && t.fuelType === fuelType, whereStation(stationId));
   for (const doc of existing) {
     await deleteDocById('tankStocks', doc.id);
   }

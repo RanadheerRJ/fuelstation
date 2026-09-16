@@ -1,12 +1,12 @@
 // DEPRECATED - Collections removed, jackpot confusing, now simple To Handover only - kept for backward compat, not used in UI
-import { listDocs, addDocTo, updateDocById, queryDocs, getDocById } from './firestoreService.js';
+import { listDocs, addDocTo, updateDocById, queryDocs, getDocById, whereStation } from './firestoreService.js';
 import { getState } from '../state.js';
 
 // Collection name: settlements (to avoid confusion)
 const COLL = 'settlements';
 
 export async function getSettlements(stationId) {
-  let all = await queryDocs(COLL, s => s.stationId === stationId);
+  let all = await queryDocs(COLL, s => s.stationId === stationId, whereStation(stationId));
   return all.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
@@ -33,7 +33,7 @@ export async function addSettlement({ stationId, staffUserId, staffName, shiftId
 
 export async function getStaffBalances(stationId) {
   const { queryDocs: q } = await import('./firestoreService.js');
-  const allShifts = await q('shifts', s => s.stationId === stationId && s.status === 'APPROVED');
+  const allShifts = await q('shifts', s => s.stationId === stationId && s.status === 'APPROVED', whereStation(stationId));
   const settlements = await getSettlements(stationId);
 
   // Group shifts by staff

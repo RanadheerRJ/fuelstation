@@ -1,10 +1,35 @@
 import { listDocs, addDocTo, updateDocById, getDocById, logAudit, queryDocs } from './firestoreService.js';
 import { getState } from '../state.js';
+import { getIsDemo } from '../firebase.js';
 
 export async function getEmployees(stationId=null) {
-  const all = await listDocs('users');
-  if (stationId) return all.filter(u => (u.stationIds||[]).includes(stationId));
-  return all;
+  const { user } = getState();
+  if (!user) return [];
+
+  if (getIsDemo()) {
+    const all = await listDocs('users');
+    return stationId ? all.filter(u => (u.stationIds||[]).includes(stationId)) : all;
+  }
+  if (user.role === 'super_admin') return listDocs('users');
+  if (user.role === 'attendant') {
+    const self = await getDocById('users', user.uid);
+    return self && (!stationId || (self.stationIds || []).includes(stationId)) ? [self] : [];
+  }
+
+  // Rules can prove array membership only when the query fixes the complete
+  // stationIds array. Query the common single-station assignment plus the
+  // caller's own assignment set, then merge duplicates.
+  const assignments = stationId
+    ? [[stationId], ...(user.stationIds?.includes(stationId) ? [user.stationIds] : [])]
+    : (user.stationIds || []).map(id => [id]).concat([user.stationIds || []]);
+  const uniqueAssignments = [...new Map(
+    assignments.filter(ids => ids.length).map(ids => [JSON.stringify(ids), ids]),
+  ).values()];
+  const batches = await Promise.all(uniqueAssignments.map(stationIds => listDocs('users', [
+    { field: 'stationIds', op: '==', value: stationIds },
+  ])));
+  return [...new Map(batches.flat().map(item => [item.id, item])).values()]
+    .filter(item => !stationId || (item.stationIds || []).includes(stationId));
 }
 
 export async function getUserById(uid) { return await getDocById('users', uid); }
