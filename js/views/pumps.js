@@ -3,6 +3,32 @@ import { getPumps, getNozzles, createPump, createNozzle, updatePump, updateNozzl
 import { getStationsForCurrentUser } from '../services/stations.js';
 import { getShifts } from '../services/shifts.js';
 
+function fuelTypeClass(fuelType) {
+  if (fuelType === 'Petrol') return 'petrol';
+  if (fuelType === 'Diesel') return 'diesel';
+  if (fuelType === 'CNG') return 'cng';
+  return 'premium';
+}
+
+function pumpIllustration() {
+  return `
+    <svg class="pump-illustration__svg" viewBox="0 0 104 120" fill="none" aria-hidden="true" focusable="false">
+      <ellipse class="pump-illustration__shadow" cx="46" cy="110" rx="31" ry="5" />
+      <circle class="pump-illustration__glow" cx="42" cy="18" r="13" />
+      <path class="pump-illustration__hose" d="M69 39c22 0 24 15 24 27 0 10-4 17-12 17h-4" />
+      <path class="pump-illustration__nozzle" d="M77 78h10v13H75v-7h7" />
+      <rect class="pump-illustration__body" x="19" y="20" width="49" height="82" rx="8" />
+      <rect class="pump-illustration__panel" x="27" y="29" width="33" height="27" rx="4" />
+      <rect class="pump-illustration__screen" x="31" y="34" width="25" height="10" rx="2" />
+      <path class="pump-illustration__line" d="M33 50h20M30 66h27M30 74h27" />
+      <path class="pump-illustration__line" d="M25 102h38" />
+      <circle class="pump-illustration__wheel" cx="30" cy="102" r="4" />
+      <circle class="pump-illustration__wheel" cx="58" cy="102" r="4" />
+      <circle class="pump-illustration__indicator" cx="61" cy="26" r="4" />
+      <path class="pump-illustration__fuel" d="M81 84c3 4 5 7 5 10a5 5 0 1 1-10 0c0-3 2-6 5-10Z" />
+    </svg>`;
+}
+
 export async function pumpsView({ root }) {
   const { currentStationId, user } = getState();
   const stations = await getStationsForCurrentUser();
@@ -16,8 +42,6 @@ export async function pumpsView({ root }) {
   const nozzles = await getNozzles(station.id);
   const activeShifts = await getShifts(station.id, { status: 'ACTIVE' }) || (await getShifts(station.id)).filter(s=>s.status==='ACTIVE');
 
-  const isOwner = user.role === 'owner';
-  const isSuperAdmin = user.role === 'super_admin';
   const canManage = ['owner','admin','manager','super_admin'].includes(user.role);
   const isAttendant = user.role === 'attendant';
 
@@ -41,173 +65,102 @@ export async function pumpsView({ root }) {
   const occupiedCount = pumps.length - availableCount;
 
   root.innerHTML = `
-    <div class="container">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div class="container pump-page">
+      <header class="pump-page__header">
         <div>
+          <div class="pump-page__eyebrow">Live forecourt</div>
           <h1 class="page-title">Pumps</h1>
-          <p class="page-sub">${station.name} • ${pumps.length} pumps • <span style="color:#52c41a">${availableCount} free</span> • <span style="color:#ff4d4f">${occupiedCount} busy</span></p>
+          <p class="page-sub">${station.name} · ${pumps.length} configured · ${availableCount} available · ${occupiedCount} busy</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${canManage ? `<button id="addPumpBtn" class="neu-btn neu-btn--small neu-btn--primary">+ Pump</button><button id="addNozzleBtn" class="neu-btn neu-btn--small">+ Nozzle</button><button id="siteGroundBtn" class="neu-btn neu-btn--small">🛢️ Stock</button>` : ''}
+        <div class="pump-page__actions">
+          ${canManage ? `<button id="addPumpBtn" class="neu-btn neu-btn--small neu-btn--primary" type="button">+ Pump</button><button id="addNozzleBtn" class="neu-btn neu-btn--small" type="button">+ Nozzle</button><button id="siteGroundBtn" class="neu-btn neu-btn--small" type="button">Stock</button>` : ''}
         </div>
+      </header>
+
+      ${isAttendant ? `<div class="alert alert--info pump-notice">Pump assignments are visible here. Available pumps can be selected to begin a shift; busy pumps show the attendant currently fueling.</div>` : ''}
+
+      <section class="pump-overview" aria-labelledby="pumpOverviewTitle">
+        <div class="pump-overview__head">
+          <div>
+            <div class="pump-overview__eyebrow">At a glance</div>
+            <h2 class="pump-overview__title" id="pumpOverviewTitle">All pump status</h2>
+            <p class="pump-overview__description">Select any pump for its nozzles and shift details.</p>
+          </div>
+          <div class="pump-overview__totals" aria-label="Pump status totals">
+            <span class="pump-total pump-total--available"><span class="status-light status-light--available"></span>${availableCount} Available</span>
+            <span class="pump-total pump-total--busy"><span class="status-light status-light--busy"></span>${occupiedCount} Busy</span>
+          </div>
+        </div>
+        <div class="status-overview">
+          ${pumps.map(p => {
+            const occ = pumpOccupancy[p.id];
+            const isFree = !occ.occupied;
+            const status = isFree ? 'available' : 'busy';
+            const detail = isFree ? 'Available' : `Busy · ${occ.employeeName}`;
+            return `
+              <button class="status-overview__item status-overview__item--${status}" type="button" data-overview-pump-id="${p.id}" aria-label="View ${p.name}: ${detail}">
+                <span class="status-overview__visual">${pumpIllustration()}</span>
+                <span class="status-overview__copy">
+                  <span class="status-overview__name">${p.name}</span>
+                  <span class="status-overview__detail">${detail}</span>
+                </span>
+                <span class="status-overview__state"><span class="status-light status-light--${status}"></span>${isFree ? 'Available' : 'Busy'}</span>
+              </button>`;
+          }).join('') || `<div class="empty" style="grid-column:1/-1;padding:12px">No pumps configured yet.</div>`}
+        </div>
+      </section>
+
+      <div class="pump-filter-bar" aria-label="Filter pumps by availability">
+        <button class="filter-btn active" data-filter="all" type="button">All (${pumps.length})</button>
+        <button class="filter-btn filter-btn--available" data-filter="free" type="button">Available (${availableCount})</button>
+        <button class="filter-btn filter-btn--busy" data-filter="busy" type="button">Busy (${occupiedCount})</button>
       </div>
 
-      ${isAttendant ? `<div class="alert alert--info" style="margin-top:12px;font-size:12px">🔒 Slack-style: You only see who is on which pump. No sensitive data. Green = free to take over, Red = busy.</div>` : ''}
-
-      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-        <button class="neu-btn neu-btn--small filter-btn active" data-filter="all" style="font-size:12px">All (${pumps.length})</button>
-        <button class="neu-btn neu-btn--small filter-btn" data-filter="free" style="font-size:12px;background:#f6ffed;border:0.5px solid #b7eb8f;color:#389e0d">🟢 Free (${availableCount})</button>
-        <button class="neu-btn neu-btn--small filter-btn" data-filter="busy" style="font-size:12px;background:#fff1f0;border:0.5px solid #ffa39e;color:#cf1322">🔴 Busy (${occupiedCount})</button>
-      </div>
-
-      <div class="pump-grid" style="margin-top:16px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
-        ${pumps.map(p=>{
+      <div class="pump-grid">
+        ${pumps.map(p => {
           const occ = pumpOccupancy[p.id];
-          const pNozzles = nozzles.filter(n=>n.pumpId===p.id);
+          const pNozzles = nozzles.filter(n => n.pumpId === p.id);
           const isFree = !occ.occupied;
-          
+          const status = isFree ? 'available' : 'busy';
+          const fuelNames = pNozzles.map(n => n.fuelType).filter((type, index, all) => all.indexOf(type) === index);
           return `
-            <div class="pump-card ${isFree ? 'pump-free' : 'pump-busy'}" data-pump-id="${p.id}" data-status="${isFree ? 'free' : 'busy'}" style="
-              position:relative;
-              background:${isFree ? 'linear-gradient(135deg,#f6ffed 0%,#ffffff 100%)' : 'linear-gradient(135deg,#fff1f0 0%,#ffffff 100%)'};
-              border:2px solid ${isFree ? '#52c41a' : '#ff4d4f'};
-              border-radius:16px;
-              padding:14px;
-              cursor:pointer;
-              transition:all 0.2s ease;
-              overflow:hidden;
-              min-height:140px;
-              display:flex;
-              flex-direction:column;
-              justify-content:space-between;
-              box-shadow:${isFree ? '0 2px 8px rgba(82,196,26,0.15)' : '0 2px 8px rgba(255,77,79,0.15)'};
-            ">
-              ${!isFree ? `
-                <div class="fueling-animation" style="
-                  position:absolute;
-                  top:0;left:0;right:0;height:4px;
-                  background:linear-gradient(90deg,#ff4d4f,#ffa39e,#ff4d4f);
-                  background-size:200% 100%;
-                  animation:fuelFlow 1.5s linear infinite;
-                "></div>
-                <div style="position:absolute;top:8px;right:8px;width:8px;height:8px;background:#ff4d4f;border-radius:50%;animation:pulse 1.2s ease-in-out infinite;box-shadow:0 0 8px #ff4d4f"></div>
-              ` : `
-                <div style="position:absolute;top:8px;right:8px;width:8px;height:8px;background:#52c41a;border-radius:50%;box-shadow:0 0 8px #52c41a"></div>
-              `}
-
-              <div>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div style="
-                    width:44px;height:44px;
-                    border-radius:12px;
-                    background:${isFree ? '#52c41a' : '#ff4d4f'};
-                    display:grid;place-items:center;
-                    font-size:22px;
-                    color:white;
-                    flex-shrink:0;
-                    ${!isFree ? 'animation:bounce 1s ease-in-out infinite' : ''}
-                  ">⛽</div>
-                  <div style="flex:1;min-width:0">
-                    <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-                    <div style="font-size:11px;color:var(--text-secondary)">#${p.number} • ${pNozzles.length} nozzles</div>
-                  </div>
-                </div>
-
-                <div style="margin-top:10px;display:flex;gap:4px;flex-wrap:wrap">
-                  ${pNozzles.map(n=>{
-                    const fuelColor = n.fuelType==='Petrol' ? '#1677ff' : n.fuelType==='Diesel' ? '#fa8c16' : n.fuelType==='CNG' ? '#52c41a' : '#722ed1';
-                    return `<span style="width:10px;height:10px;border-radius:50%;background:${fuelColor};display:inline-block;border:1.5px solid white;box-shadow:0 0 0 1px ${fuelColor}33" title="${n.fuelType} #${n.number}"></span>`;
-                  }).join('') || `<span style="font-size:10px;color:var(--text-tertiary)">No nozzles</span>`}
-                  <span style="font-size:10px;color:var(--text-tertiary);margin-left:4px">${pNozzles.map(n=>n.fuelType[0]).join('')}</span>
-                </div>
-              </div>
-
-              <div style="margin-top:12px">
-                ${isFree ? `
-                  <div style="display:flex;align-items:center;gap:6px">
-                    <span style="width:8px;height:8px;background:#52c41a;border-radius:50%;display:inline-block"></span>
-                    <span style="font-size:12px;font-weight:600;color:#389e0d">Available</span>
-                  </div>
-                  <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Tap to take over</div>
-                ` : `
-                  <div style="background:rgba(255,77,79,0.08);border-radius:8px;padding:8px;border:0.5px solid rgba(255,77,79,0.15)">
-                    <div style="display:flex;align-items:center;gap:6px">
-                      <span style="width:8px;height:8px;background:#ff4d4f;border-radius:50%;display:inline-block;animation:pulse 1s infinite"></span>
-                      <span style="font-size:12px;font-weight:600;color:#cf1322">Occupied</span>
-                      <span style="font-size:10px;background:#ff4d4f;color:white;padding:2px 6px;border-radius:10px;animation:pulse 1.5s infinite">● LIVE</span>
-                    </div>
-                    <div style="margin-top:6px;display:flex;align-items:center;gap:6px">
-                      <div style="width:24px;height:24px;border-radius:50%;background:#ff4d4f;color:white;display:grid;place-items:center;font-size:11px;font-weight:700;flex-shrink:0">${(occ.employeeName||'?')[0].toUpperCase()}</div>
-                      <div style="min-width:0;flex:1">
-                        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${occ.employeeName}</div>
-                        <div style="font-size:10px;color:var(--text-secondary)">is fueling ⛽</div>
-                      </div>
-                      <div style="font-size:16px;animation:fuelDrop 1s ease-in-out infinite">💧</div>
-                    </div>
-                    ${!isAttendant ? `<div style="font-size:10px;color:var(--text-tertiary);margin-top:4px">Shift: ${occ.shift?.id?.slice(0,6)||''} • Tap for details</div>` : ''}
-                  </div>
-                `}
-              </div>
-
-              ${!isFree ? `
-                <div style="position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ff4d4f,transparent);animation:fuelFlow 2s linear infinite;opacity:0.6"></div>
-              ` : ''}
-            </div>
-          `;
+            <button class="pump-card pump-card--${status} ${isFree ? 'pump-free' : 'pump-busy'}" type="button" data-pump-id="${p.id}" data-status="${isFree ? 'free' : 'busy'}" aria-label="View ${p.name}, ${isFree ? 'available' : `busy with ${occ.employeeName}`}">
+              <span class="pump-card__head">
+                <span class="pump-card__visual">${pumpIllustration()}</span>
+                <span class="pump-card__title-wrap">
+                  <span class="pump-card__title">${p.name}</span>
+                  <span class="pump-card__subtitle">Pump #${p.number} · ${pNozzles.length} nozzle${pNozzles.length === 1 ? '' : 's'}</span>
+                  <span class="pump-card__tag"><span class="status-light status-light--${status}"></span>${isFree ? 'Available now' : 'Fueling in progress'}</span>
+                </span>
+              </span>
+              <span class="pump-card__fuel-row">
+                ${pNozzles.map(n => `<span class="fuel-dot fuel-dot--${fuelTypeClass(n.fuelType)}" title="${n.fuelType} nozzle ${n.number}"></span>`).join('') || '<span class="pump-card__fuel-copy">No nozzles configured</span>'}
+                ${pNozzles.length ? `<span class="pump-card__fuel-copy">${fuelNames.join(' · ')}</span>` : ''}
+              </span>
+              <span class="pump-card__footer">
+                <span class="pump-card__availability">
+                  <span class="status-light status-light--${status}"></span>
+                  <span class="pump-card__availability-copy">
+                    <span class="pump-card__availability-label">${isFree ? 'Available' : 'Busy'}</span>
+                    <span class="pump-card__availability-detail">${isFree ? 'Select to start a shift' : `${occ.employeeName} is fueling`}</span>
+                  </span>
+                </span>
+                <span class="pump-card__open">View details →</span>
+              </span>
+            </button>`;
         }).join('')}
       </div>
 
-      ${pumps.length===0 ? `<div class="neu-card empty" style="margin-top:16px"><div style="font-size:32px">🔧</div><p>No pumps configured</p><p style="font-size:12px;color:var(--text-secondary)">Create a pump and add nozzles</p></div>` : ''}
+      ${pumps.length === 0 ? `<div class="neu-card empty pump-empty"><div class="emoji">⛽</div><p>No pumps configured</p><p style="font-size:12px;color:var(--text-secondary)">Create a pump and add nozzles to start using the live overview.</p></div>` : ''}
 
-      <div style="margin-top:20px;padding:12px;background:var(--bg);border-radius:12px;border:0.5px solid var(--border)">
-        <div style="font-size:12px;font-weight:600">Legend • Slack-style operations</div>
-        <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary)">
-          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#52c41a;border-radius:50%;display:inline-block"></span> Free — tap to start shift</span>
-          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#ff4d4f;border-radius:50%;display:inline-block"></span> Busy — someone fueling</span>
-          <span>🔵 Petrol • 🟠 Diesel • 🟢 CNG • 🟣 Premium</span>
-        </div>
-        <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Attendants only see who is on which pump. No sensitive readings leaked.</div>
-      </div>
+      <aside class="pump-legend" aria-label="Pump status legend">
+        <span class="pump-legend__title">Status guide</span>
+        <span class="pump-legend__item"><span class="status-light status-light--available"></span>Available — select to start a shift</span>
+        <span class="pump-legend__item"><span class="status-light status-light--busy"></span>Busy — an attendant is fueling</span>
+        <span class="pump-legend__item"><span class="fuel-dot fuel-dot--petrol"></span>Petrol <span class="fuel-dot fuel-dot--diesel"></span>Diesel <span class="fuel-dot fuel-dot--cng"></span>CNG <span class="fuel-dot fuel-dot--premium"></span>Premium</span>
+        ${isAttendant ? '<span class="pump-legend__note">Your view keeps sensitive nozzle readings private.</span>' : ''}
+      </aside>
     </div>
-
-    <style>
-      @keyframes fuelFlow {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-      }
-      @keyframes pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.3); opacity: 0.7; }
-      }
-      @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-2px); }
-      }
-      @keyframes fuelDrop {
-        0%, 100% { transform: translateY(0) scale(1); }
-        50% { transform: translateY(3px) scale(1.1); }
-      }
-      .pump-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important;
-      }
-      .pump-free:hover {
-        border-color: #389e0d !important;
-      }
-      .pump-busy:hover {
-        border-color: #cf1322 !important;
-      }
-      .filter-btn.active {
-        background: var(--primary) !important;
-        color: white !important;
-        border-color: var(--primary) !important;
-      }
-      @media (min-width: 768px) {
-        .pump-grid {
-          grid-template-columns: repeat(3, 1fr) !important;
-        }
-      }
-    </style>
 
     <div id="modalRoot"></div>
   `;
@@ -238,6 +191,16 @@ export async function pumpsView({ root }) {
   });
 
   const modalRoot = root.querySelector('#modalRoot') || document.getElementById('modalRoot');
+
+  // The all-pumps overview is a shortcut to the same existing detail modal.
+  root.querySelectorAll('.status-overview__item').forEach(item => {
+    item.addEventListener('click', () => {
+      const pumpId = item.dataset.overviewPumpId;
+      const pump = pumps.find(p => p.id === pumpId);
+      if (!pump) return;
+      openPumpDetailModal(pump, nozzles.filter(n => n.pumpId === pumpId), pumpOccupancy[pumpId]);
+    });
+  });
 
   root.querySelector('#addPumpBtn')?.addEventListener('click', ()=> openPumpModal());
   root.querySelector('#addNozzleBtn')?.addEventListener('click', ()=> openNozzleModal());
