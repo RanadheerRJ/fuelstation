@@ -13,6 +13,7 @@ import {
   getDocs,
   query,
   setDoc,
+  setLogLevel,
   updateDoc,
   where,
   writeBatch,
@@ -36,6 +37,10 @@ const IDS = {
 };
 
 let testEnv;
+
+// Expected permission-denied assertions are intentionally numerous. Keep the
+// test output focused on unexpected failures instead of SDK transport logs.
+setLogLevel('silent');
 
 function profile(name, phone, role, stationIds, status = 'active') {
   return { name, phone, role, stationIds, status, createdBy: IDS.superAdmin, createdAt: '2026-09-16T00:00:00.000Z' };
