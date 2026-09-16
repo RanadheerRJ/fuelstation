@@ -501,36 +501,51 @@ service cloud.firestore {
         );
     }
 
-    function reviewerDecisionIsAllowed() {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      let oldStatus = resource.data.status;
-      let newStatus = request.resource.data.status;
+    function reviewerContextIsValid() {
       return canReviewShift(resource.data.stationId)
         && resource.data.userId != request.auth.uid
-        && shiftIdentityIsUnchanged()
+        && shiftIdentityIsUnchanged();
+    }
+
+    function reviewerApprovalIsAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return reviewerContextIsValid()
+        && resource.data.status == 'PENDING_REVIEW'
+        && request.resource.data.status == 'APPROVED'
+        && request.resource.data.keys().hasAll(['approvedBy', 'approvedAt'])
+        && request.resource.data.approvedBy == request.auth.uid
+        && changed.hasOnly([
+          'status', 'approvedBy', 'approvedAt',
+          'correctionRequests', 'updatedAt'
+        ]);
+    }
+
+    function reviewerRejectionIsAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return reviewerContextIsValid()
+        && resource.data.status == 'PENDING_REVIEW'
+        && request.resource.data.status == 'REJECTED'
+        && request.resource.data.keys().hasAll([
+          'rejectedBy', 'rejectedAt', 'rejectionReason'
+        ])
+        && request.resource.data.rejectedBy == request.auth.uid
+        && changed.hasOnly([
+          'status', 'rejectedBy', 'rejectedAt', 'rejectionReason',
+          'correctionRequests', 'updatedAt'
+        ]);
+    }
+
+    function reviewerCorrectionIsAllowed() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return reviewerContextIsValid()
+        && resource.data.status == 'REJECTED'
         && (
-          (oldStatus == 'PENDING_REVIEW'
-            && newStatus == 'APPROVED'
-            && request.resource.data.approvedBy == request.auth.uid
+          (request.resource.data.status == 'PENDING_REVIEW'
             && changed.hasOnly([
-                'status', 'approvedBy', 'approvedAt',
-                'correctionRequests', 'updatedAt'
-              ]))
-          || (oldStatus == 'PENDING_REVIEW'
-            && newStatus == 'REJECTED'
-            && request.resource.data.rejectedBy == request.auth.uid
-            && changed.hasOnly([
-                'status', 'rejectedBy', 'rejectedAt', 'rejectionReason',
-                'correctionRequests', 'updatedAt'
-              ]))
-          || (oldStatus == 'REJECTED'
-            && newStatus == 'PENDING_REVIEW'
-            && changed.hasOnly([
-                'nozzles', 'totals', 'endTime', 'closeTime', 'status',
-                'correctionRequests', 'resubmittedAt', 'updatedAt'
-              ]))
-          || (oldStatus == 'REJECTED'
-            && newStatus == 'REJECTED'
+              'nozzles', 'totals', 'endTime', 'closeTime', 'status',
+              'correctionRequests', 'resubmittedAt', 'updatedAt'
+            ]))
+          || (request.resource.data.status == 'REJECTED'
             && changed.hasOnly(['correctionRequests', 'updatedAt']))
         );
     }
@@ -547,9 +562,13 @@ service cloud.firestore {
 
       // APPROVED shifts are immutable to every client role. Controlled backend
       // correction and settlement workflows can be added later with Admin SDK.
-      allow update: if isActiveUser()
-        && !isApprovedShift()
-        && (ownShiftUpdateIsAllowed() || reviewerDecisionIsAllowed());
+      allow update: if !isApprovedShift()
+        && (
+          ownShiftUpdateIsAllowed()
+          || reviewerApprovalIsAllowed()
+          || reviewerRejectionIsAllowed()
+          || reviewerCorrectionIsAllowed()
+        );
 
       allow delete: if false;
     }
