@@ -600,6 +600,13 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.status in ['ACTIVE', 'REJECTED'];
     }
 
+    function transactionShiftMatchesStation(data) {
+      return data.shiftId == null
+        || (data.shiftId is string
+          && exists(/databases/$(database)/documents/shifts/$(data.shiftId))
+          && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.stationId == data.stationId);
+    }
+
     function transactionHasValidShape(data) {
       return data.keys().hasAll([
           'stationId', 'shiftId', 'type', 'amount', 'createdBy'
@@ -627,11 +634,19 @@ service cloud.firestore {
       allow create: if isActiveUser()
         && isStationMember(request.resource.data.stationId)
         && transactionHasValidShape(request.resource.data)
+        && transactionShiftMatchesStation(request.resource.data)
         && (canReviewShift(request.resource.data.stationId)
           || linkedShiftAcceptsEntries(request.resource.data));
 
       // Financial entries are append-only.
       allow update, delete: if false;
+    }
+
+    function noteShiftMatchesStation(data) {
+      return data.shiftId == null
+        || (data.shiftId is string
+          && exists(/databases/$(database)/documents/shifts/$(data.shiftId))
+          && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.stationId == data.stationId);
     }
 
     function noteHasValidShape(data) {
@@ -659,10 +674,23 @@ service cloud.firestore {
       allow create: if isActiveUser()
         && isStationMember(request.resource.data.stationId)
         && noteHasValidShape(request.resource.data)
+        && noteShiftMatchesStation(request.resource.data)
         && (canReviewShift(request.resource.data.stationId)
           || linkedShiftAcceptsEntries(request.resource.data));
 
       allow update, delete: if false;
+    }
+
+    function settlementReferencesMatchStation(data) {
+      return exists(userPath(data.staffUserId))
+        && get(userPath(data.staffUserId)).data.stationIds is list
+        && data.stationId in get(userPath(data.staffUserId)).data.stationIds
+        && (!data.keys().hasAny(['shiftId'])
+          || data.shiftId == null
+          || (data.shiftId is string
+            && exists(/databases/$(database)/documents/shifts/$(data.shiftId))
+            && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.stationId == data.stationId
+            && get(/databases/$(database)/documents/shifts/$(data.shiftId)).data.userId == data.staffUserId));
     }
 
     function settlementHasValidShape(data) {
@@ -688,7 +716,8 @@ service cloud.firestore {
           || resource.data.staffUserId == request.auth.uid);
 
       allow create: if canReviewShift(request.resource.data.stationId)
-        && settlementHasValidShape(request.resource.data);
+        && settlementHasValidShape(request.resource.data)
+        && settlementReferencesMatchStation(request.resource.data);
 
       // Ledger entries are append-only.
       allow update, delete: if false;

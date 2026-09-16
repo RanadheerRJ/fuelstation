@@ -694,6 +694,15 @@ describe('transactions, notes, settlements, and audit logs', () => {
       description: 'Repair',
       createdBy: IDS.managerA,
     }));
+    await assertFails(setDoc(doc(dbFor(IDS.managerA), 'transactions', 'mismatched-shift-expense'), {
+      stationId: STATION_A,
+      shiftId: 'active-b',
+      type: 'expense',
+      category: 'Maintenance',
+      amount: 50,
+      description: 'Repair',
+      createdBy: IDS.managerA,
+    }));
   });
 
   test('attendant reads own-shift entries but not another shift entries', async () => {
@@ -759,6 +768,15 @@ describe('transactions, notes, settlements, and audit logs', () => {
       pumpId: null,
       nozzleId: null,
     }));
+    await assertFails(setDoc(doc(dbFor(IDS.managerA), 'notes', 'mismatched-shift-note'), {
+      stationId: STATION_A,
+      shiftId: 'active-b',
+      userId: IDS.managerA,
+      userName: 'Manager A',
+      text: 'Cross-station link',
+      pumpId: null,
+      nozzleId: null,
+    }));
     await assertSucceeds(getDoc(doc(dbFor(IDS.attendantA), 'notes', 'note-a')));
     await assertFails(getDoc(doc(dbFor(IDS.attendantA), 'notes', 'note-a2')));
   });
@@ -782,6 +800,18 @@ describe('transactions, notes, settlements, and audit logs', () => {
     await assertFails(setDoc(doc(dbFor(IDS.attendantA), 'settlements', 'attendant-settlement'), {
       ...settlement,
       createdBy: IDS.attendantA,
+    }));
+    await assertFails(setDoc(doc(dbFor(IDS.managerA), 'settlements', 'foreign-staff-settlement'), {
+      ...settlement,
+      staffUserId: IDS.attendantB,
+      staffName: 'Attendant B',
+      shiftId: null,
+      shiftIds: [],
+    }));
+    await assertFails(setDoc(doc(dbFor(IDS.managerA), 'settlements', 'mismatched-shift-settlement'), {
+      ...settlement,
+      shiftId: 'active-b',
+      shiftIds: ['active-b'],
     }));
     await assertFails(updateDoc(doc(dbFor(IDS.ownerA), 'settlements', 'settlement-a'), { amount: 1 }));
     await assertFails(deleteDoc(doc(dbFor(IDS.superAdmin), 'settlements', 'settlement-a')));
