@@ -63,22 +63,32 @@ export async function updateStation(id, patch) {
 
 export async function getStationById(id) { return await getDocById('stations', id); }
 
-export async function deleteStation(id) {
+/**
+ * Resolve destructive-operation authority for a station.
+ *
+ * Ownership is proven ONLY by the station document's ownerId matching the
+ * authenticated UID. The caller's profile stationIds array is deliberately
+ * NOT consulted: it is a role/assignment hint that a compromised or stale
+ * session could carry entries for stations the user does not own, so trusting
+ * it here would let a polluted array authorize deletes/resets across tenants.
+ */
+async function assertStationOwnership(stationId, action) {
   const { user } = getState();
-  const isSuperAdmin = user?.role === 'super_admin';
-  const isOwner = user?.role === 'owner';
-  
-  // Only Station Owner and Super Admin can delete
-  if (!isSuperAdmin && !isOwner) throw new Error('Only Station Owner can delete stations');
-  
-  // For owner, check if station belongs to them
-  if (isOwner && !isSuperAdmin) {
-    const station = await getDocById('stations', id);
-    if (!station) throw new Error('Station not found');
-    const isOwn = station.ownerId === user.uid || (user.stationIds||[]).includes(id);
-    if (!isOwn) throw new Error('You can only delete your own station');
+  if (!user) throw new Error('You must be signed in to perform this action');
+  if (user.role === 'super_admin') return true;
+  if (user.role !== 'owner') throw new Error(`Only Station Owner can ${action}`);
+
+  const station = await getDocById('stations', stationId);
+  if (!station) throw new Error('Station not found');
+  if (station.ownerId !== user.uid) {
+    throw new Error(`You can only ${action} your own station`);
   }
-  
+  return true;
+}
+
+export async function deleteStation(id) {
+  await assertStationOwnership(id, 'delete');
+
   // First reset all operational data for this station
   await resetStationData(id);
   
@@ -105,23 +115,9 @@ export async function deleteStation(id) {
 
 export async function resetStationData(stationId) {
   const { getDbInstance, loadFirestoreModule, getIsDemo } = await import('../firebase.js');
-  const { user } = getState();
-  const isSuperAdmin = user?.role === 'super_admin';
-  const isOwner = user?.role === 'owner';
-  
-  // Only Station Owner and Super Admin can reset
-  if (!isSuperAdmin && !isOwner) throw new Error('Only Station Owner can reset data');
-  
-  if (isOwner && !isSuperAdmin && user) {
-    const hasAccess = (user.stationIds||[]).includes(stationId);
-    if (!hasAccess) {
-      const station = await getDocById('stations', stationId);
-      if (!station || station.ownerId !== user.uid) {
-        throw new Error('You can only reset your own station');
-      }
-    }
-  }
-  
+
+  await assertStationOwnership(stationId, 'reset data for');
+
   const isDemo = getIsDemo();
   
   if (isDemo) {
