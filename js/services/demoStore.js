@@ -21,6 +21,7 @@ function createInitialDemoData() {
     pumps: [],
     nozzles: [],
     prices: [],
+    tankStocks: [],
     assignments: [],
     shifts: [],
     transactions: [],

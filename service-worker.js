@@ -7,7 +7,7 @@
 //  - CACHE_NAME is injected by scripts/bump-sw-version.js on every commit/deploy,
 //    so you never need to hand-edit a version string again - every push
 //    automatically busts old caches for every user.
-const CACHE_NAME = 'fuelops-20260915-ca1e744198';
+const CACHE_NAME = 'fuelops-20260916-75f4cba808';
 
 const APP_SHELL = [
   './',
