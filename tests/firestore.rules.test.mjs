@@ -37,9 +37,14 @@ const IDS = {
   // Owner of STATION_C whose profile.stationIds has been polluted with
   // STATION_B (an unowned tenant) to emulate a stale or forged assignment.
   ownerPolluted: 'owner-polluted',
+  // Owner of STATION_D whose profile.stationIds was never synced (left empty)
+  // to emulate a station created after the profile was provisioned.
+  ownerStale: 'owner-stale',
+  attendantD: 'attendant-d',
 };
 
 const STATION_C = 'station-c';
+const STATION_D = 'station-d';
 
 let testEnv;
 
@@ -166,10 +171,14 @@ async function seedDatabase() {
     put(`users/${IDS.inactiveA}`, profile('Inactive A', '9000000009', 'manager', [STATION_A], 'inactive'));
     // Owns STATION_C only, but carries STATION_B in stationIds.
     put(`users/${IDS.ownerPolluted}`, profile('Owner Polluted', '9000000010', 'owner', [STATION_C, STATION_B]));
+    // Owns STATION_D only, but the profile stationIds was never synced.
+    put(`users/${IDS.ownerStale}`, profile('Owner Stale', '9000000011', 'owner', []));
+    put(`users/${IDS.attendantD}`, profile('Attendant D', '9000000012', 'attendant', [STATION_D]));
 
     put(`stations/${STATION_A}`, station('Station A', IDS.ownerA));
     put(`stations/${STATION_B}`, station('Station B', IDS.ownerB));
     put(`stations/${STATION_C}`, station('Station C', IDS.ownerPolluted));
+    put(`stations/${STATION_D}`, station('Station D', IDS.ownerStale));
 
     put('pumps/pump-a', pump(STATION_A, IDS.ownerA));
     put('pumps/pump-b', pump(STATION_B, IDS.ownerB));
@@ -499,6 +508,30 @@ describe('user profile security and role escalation', () => {
     );
     await assertSucceeds(getDocs(stationUsers));
     await assertFails(getDoc(doc(dbFor(IDS.managerA), 'users', IDS.attendantB)));
+  });
+
+  test('owner directory reads follow owned stations, not stale profile stationIds', async () => {
+    const owner = dbFor(IDS.ownerStale);
+
+    // The profile stationIds is empty, yet the staff directory of the owned
+    // station must stay reachable: ownership comes from stations/{id}.ownerId.
+    await assertSucceeds(getDocs(query(
+      collection(owner, 'users'),
+      where('stationIds', '==', [STATION_D]),
+    )));
+    await assertSucceeds(getDoc(doc(owner, 'users', IDS.attendantD)));
+
+    // Still fail-closed: no other tenant, no unscoped or multi-station reads.
+    await assertFails(getDoc(doc(owner, 'users', IDS.attendantB)));
+    await assertFails(getDocs(query(
+      collection(owner, 'users'),
+      where('stationIds', '==', [STATION_B]),
+    )));
+    await assertFails(getDocs(query(
+      collection(owner, 'users'),
+      where('stationIds', '==', [STATION_D, STATION_B]),
+    )));
+    await assertFails(getDocs(collection(owner, 'users')));
   });
 
   test('owner creates staff only within owned stations', async () => {
