@@ -198,15 +198,22 @@ service cloud.firestore {
     // Staff-directory scoping.
     //
     // Managers and admins are assignment-scoped, so stationIds overlap is the
-    // correct test for them. Owners are NOT: their stationIds may be stale or
-    // polluted, so an overlap test would expose another owner's staff. For an
-    // owner the target's station must be one they provably own via
-    // stations/{id}.ownerId.
+    // correct test for them. Owners are NOT: an owner's profile stationIds may
+    // be stale or polluted, so it must play no part in the read decision. An
+    // overlap test against it would both expose another owner's staff AND
+    // wrongly deny access to stations the owner provably owns (e.g. created
+    // after the profile was provisioned). The client resolves owner scope
+    // from stations/{id}.ownerId and issues exact single-station queries, so
+    // for an owner the target's station must be one they provably own via
+    // stations/{id}.ownerId alone.
     function sharesManagedStation(targetData) {
       return targetData.stationIds is list
-        && callerStationIds() is list
-        && targetData.stationIds.hasAny(callerStationIds())
-        && (!isOwner() || ownsAnyOfStations(targetData.stationIds));
+        && (
+          isOwner()
+            ? ownsAnyOfStations(targetData.stationIds)
+            : (callerStationIds() is list
+              && targetData.stationIds.hasAny(callerStationIds()))
+        );
     }
 
     // Rules cannot iterate a list against get(), so ownership is confirmed for
