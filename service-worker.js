@@ -14,6 +14,7 @@ const APP_SHELL = [
   './index.html',
   './manifest.json',
   './css/styles.css',
+  './css/ui-polish.css',
   './js/app.js',
   './js/firebase-config.js',
   './js/firebase.js',
