@@ -63,6 +63,19 @@ export const firebaseConfig = {
 
 No dummy data will be created - you start fresh with your own stations.
 
+## 🧹 Reset Station Data (Keep Users)
+
+Development reset tool: deletes **all station/operational data** from Firestore while **keeping user
+profiles** (and their logins). Runs via the Admin SDK from your machine — the security rules
+intentionally block this from the app UI.
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=~/fuelops-prod-key.json npm run purge:station-data            # dry run
+GOOGLE_APPLICATION_CREDENTIALS=~/fuelops-prod-key.json npm run purge:station-data -- --apply # purge
+```
+
+Full walkthrough (service-account key, flags, emulator testing): [`docs/DATA_RESET.md`](./docs/DATA_RESET.md)
+
 ## 📦 Deploy to GitHub Pages
 
 This app is designed for GitHub Pages subpath like `https://username.github.io/fuelstation/`:
